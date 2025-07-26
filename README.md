@@ -1,4 +1,4 @@
-# Ease for GML
+# Cassette
 
 A lightweight, self-contained GML script for creating smooth animations. Ease provides a rich collection of standard easing functions and a simple system for building complex, chainable transitions. 
 
@@ -8,20 +8,20 @@ Animate anything from UI elements to character movements with just a few lines o
 
 ### 1\. Installation
 
-Simply add the `ease` script to your GameMaker project.
+Simply add the `Cassette` script to your GameMaker project.
 
-### 2\. Usage (Zero Setup\!)
+### 2\. Usage 
 
-Thanks to its static design, **no initialization is needed\!** The `ease` library is ready to use as soon as you add the script.
+In a persistent controller object, define a Cassette manager. The manager is a singleton for all animations, so you need only define it once.
 
-All you need to do is call the static `update()` method once per frame from a persistent controller object (like in a `Step Event`). This single call manages all active animations.
+I recomnmend using 'ease' for semantic clarity i.e. ease.InOutElastic(t)
 
 ```gml
-// oGame :: Step Event
-ease.update();
+// Create Event
+ease = new Cassette();
 ```
 
-*Note: You can toggle between frame-based and time-based animations by setting the `EASE_USE_DELTA_TIME` macro at the top of the script.*
+*Note: You can toggle between frame-based and time-based animations by setting the `CASSETTE_USE_DELTA_TIME` macro at the top of the script.*
 
 -----
 
@@ -29,7 +29,7 @@ ease.update();
 
 You can now start, stop, and get values from the static `ease` manager anywhere in your code.
 
-To start a new animation, use `ease.transition()`. You can chain multiple tweens together using `.add()`.
+To start a new animation, use `.transition()`. You can chain multiple tweens together using `.add()`.
 
 ```gml
 // oPlayer :: Create Event
@@ -39,7 +39,7 @@ ease.transition("player_x", x, x + 200, 60, ease.OutExpo)
     .add(x + 200, x + 200, 30, ease.InOutSine);
 
 // Animate y position with a PingPong effect that repeats 3 times
-ease.transition("player_y", y, y + 100, 90, ease.OutBounce, EASE_ANIM.PingPong, 3);
+ease.transition("player_y", y, y + 100, 90, ease.OutBounce, CASSETTE_ANIM.PingPong, 3);
 ```
 
 To get the current value of an animation, use `ease.get_value()`. Apply this value in a Step or Draw event.
