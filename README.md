@@ -1,4 +1,6 @@
+<p align="center">
 ![Cassette Logo](cassette_logo_icon.png)
+</p>
 # Cassette
 
 A lightweight, self-contained GML script for creating smooth animations. Cassette provides a rich collection of standard easing functions and a simple system for building complex, chainable transitions. 
