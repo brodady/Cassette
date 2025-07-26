@@ -1,6 +1,7 @@
 <p align="center">
-![Cassette Logo](cassette_logo_icon.png)
+<img src = "cassette_logo_icon.png" alt = "Cassette Logo Icon")>
 </p>
+
 # Cassette
 
 A lightweight, self-contained GML script for creating smooth animations. Cassette provides a rich collection of standard easing functions and a simple system for building complex, chainable transitions. 
