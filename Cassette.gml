@@ -1,5 +1,5 @@
 /// --- Cassette ---
-// A portable collection of easing functions in a handy literal syntax e.g. "self.InOutExpo(_t)"
+// A portable collection of easing functions in a handy literal syntax e.g. "ease.InOutExpo(_t)"
 // Features a simple yet powerful animation system with chainable transitions.
 // -- by:    Mr. Giff
 // -- ver:  1.1.0 (Changed name for better experience and namespace, fixed chaining)
