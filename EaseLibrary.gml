@@ -1,64 +1,64 @@
-/// --- Ease ---
-// A portable collection of easing functions in a handy literal syntax e.g. "ease.InOutExpo(_t)"
+/// --- Cassette ---
+// A portable collection of easing functions in a handy literal syntax e.g. "self.InOutExpo(_t)"
 // Features a simple yet powerful animation system with chainable transitions.
 // -- by:    Mr. Giff
-// -- ver:  1.0.0
+// -- ver:  1.1.0 (Changed name for better experience and namespace, fixed chaining)
 // -- lic:    MIT
 
 // --- Take time in Seconds if true (e.g 0.9) vs Frames (e.g 120)
-#macro EASE_USE_DELTA_TIME false
+#macro CASSETTE_USE_DELTA_TIME false
 
 // "Fast Math"
 // --- Bounce Constants ---
-#macro EASE_BOUNCE_N1 7.5625
-#macro EASE_BOUNCE_D1 2.75
-#macro EASE_BOUNCE_T1 (1 / EASE_BOUNCE_D1)   // Threshold 1: 1 / 2.75
-#macro EASE_BOUNCE_T2 (2 / EASE_BOUNCE_D1)   // Threshold 2: 2 / 2.75
-#macro EASE_BOUNCE_T3 (2.5 / EASE_BOUNCE_D1) // Threshold 3: 2.5 / 2.75
-#macro EASE_BOUNCE_O1 (1.5 / EASE_BOUNCE_D1) // Offset 1: 1.5 / 2.75
-#macro EASE_BOUNCE_O2 (2.25 / EASE_BOUNCE_D1) // Offset 2: 2.25 / 2.75
-#macro EASE_BOUNCE_O3 (2.625 / EASE_BOUNCE_D1) // Offset 3: 2.625 / 2.75
-#macro EASE_BOUNCE_A1 0.75     // Addition 1
-#macro EASE_BOUNCE_A2 0.9375   // Addition 2
-#macro EASE_BOUNCE_A3 0.984375 // Addition 3
+#macro CASSETTE_BOUNCE_N1 7.5625
+#macro CASSETTE_BOUNCE_D1 2.75
+#macro CASSETTE_BOUNCE_T1 (1 / CASSETTE_BOUNCE_D1)   // Threshold 1: 1 / 2.75
+#macro CASSETTE_BOUNCE_T2 (2 / CASSETTE_BOUNCE_D1)   // Threshold 2: 2 / 2.75
+#macro CASSETTE_BOUNCE_T3 (2.5 / CASSETTE_BOUNCE_D1) // Threshold 3: 2.5 / 2.75
+#macro CASSETTE_BOUNCE_O1 (1.5 / CASSETTE_BOUNCE_D1) // Offset 1: 1.5 / 2.75
+#macro CASSETTE_BOUNCE_O2 (2.25 / CASSETTE_BOUNCE_D1) // Offset 2: 2.25 / 2.75
+#macro CASSETTE_BOUNCE_O3 (2.625 / CASSETTE_BOUNCE_D1) // Offset 3: 2.625 / 2.75
+#macro CASSETTE_BOUNCE_A1 0.75     // Addition 1
+#macro CASSETTE_BOUNCE_A2 0.9375   // Addition 2
+#macro CASSETTE_BOUNCE_A3 0.984375 // Addition 3
 
 // --- Elastic Constants ---
-#macro EASE_ELASTIC_PERIOD1_DIV 3.0
-#macro EASE_ELASTIC_PERIOD2_DIV 4.5
-#macro EASE_ELASTIC_C4 ((2 * pi) / EASE_ELASTIC_PERIOD1_DIV) // Constant for In/Out Elastic period
-#macro EASE_ELASTIC_C5 ((2 * pi) / EASE_ELASTIC_PERIOD2_DIV) // Constant for InOut Elastic period
+#macro CASSETTE_ELASTIC_PERIOD1_DIV 3.0
+#macro CASSETTE_ELASTIC_PERIOD2_DIV 4.5
+#macro CASSETTE_ELASTIC_C4 ((2 * pi) / CASSETTE_ELASTIC_PERIOD1_DIV) // Constant for In/Out Elastic period
+#macro CASSETTE_ELASTIC_C5 ((2 * pi) / CASSETTE_ELASTIC_PERIOD2_DIV) // Constant for InOut Elastic period
 
 // --- Back Constants ---
-#macro EASE_BACK_S1 1.70158                 // Overshoot amount factor
-#macro EASE_BACK_S2 (EASE_BACK_S1 * 1.525) // Overshoot amount factor for InOut
-#macro EASE_BACK_C1 EASE_BACK_S1           // Keep c1 for consistency
-#macro EASE_BACK_C2 EASE_BACK_S2           // Keep c2 for consistency
-#macro EASE_BACK_C3 (EASE_BACK_S1 + 1)     // Derived constant for In/Out Back
+#macro CASSETTE_BACK_S1 1.70158                 // Overshoot amount factor
+#macro CASSETTE_BACK_S2 (CASSETTE_BACK_S1 * 1.525) // Overshoot amount factor for InOut
+#macro CASSETTE_BACK_C1 CASSETTE_BACK_S1           // Keep c1 for consistency
+#macro CASSETTE_BACK_C2 CASSETTE_BACK_S2           // Keep c2 for consistency
+#macro CASSETTE_BACK_C3 (CASSETTE_BACK_S1 + 1)     // Derived constant for In/Out Back
 
-/// @enum EASE_ANIM
+/// @enum CASSETTE_ANIM
 /// @desc Defines the playback behavior for a transition.
-enum EASE_ANIM {
+enum CASSETTE_ANIM {
     Once,     // Plays the animation one time from start to finish.
     Loop,     // Restarts the animation from the beginning after it finishes.
     PingPong  // Reverses the animation direction when it reaches the end.
 }
 
-/// @function ease()
+/// @function Cassette()
 /// @description A centralized, self-contained class for chained, sequenced animations with advanced playback
-function ease() constructor{
+function Cassette() constructor{
     
     static active_transitions = {};
 
     // --- Private Chain Builder ---
     // This is returned by 'transition()' to allow for method chaining.
-    function EaseChainBuilder(_queue_ref) constructor {
+    function ChainBuilder(_queue_ref) constructor {
         queue = _queue_ref;
         
         /// @function add(from, to, duration, func, [anim_state], [loop_for])
         /// @desc Adds a new transition to the sequence.
-        add = function(_from, _to, _duration, _func, _anim_state = EASE_ANIM.Once, _loop_for = -1) {
+        add = function(_from, _to, _duration, _func, _anim_state = CASSETTE_ANIM.Once, _loop_for = -1) {
             var _next_definition = {
-                from_val: _from, to_val: _to, duration: _duration, ease_func: _func,
+                from_val: _from, to_val: _to, duration: _duration, CASSETTE_func: _func,
                 anim_state: _anim_state, loops_left: _loop_for
             };
             array_push(queue, _next_definition);
@@ -70,10 +70,10 @@ function ease() constructor{
     
     /// @function transition(key, from, to, duration, func, [anim_state], [loop_for])
     /// @description Starts a new transition sequence and returns a chainable object.
-    static transition = function(_key, _from, _to, _duration, _func, _anim_state = EASE_ANIM.Once, _loop_for = -1) {
+    static transition = function(_key, _from, _to, _duration, _func, _anim_state = CASSETTE_ANIM.Once, _loop_for = -1) {
         // This is the definition for the FIRST transition in the sequence.
         var _first_definition = {
-            from_val: _from, to_val: _to, duration: _duration, ease_func: _func,
+            from_val: _from, to_val: _to, duration: _duration, CASSETTE_func: _func,
             anim_state: _anim_state, loops_left: _loop_for
         };
         
@@ -86,13 +86,13 @@ function ease() constructor{
             current_val: _from,
             timer: 0,
             direction: 1,
-            loops_left: (_anim_state == EASE_ANIM.Once) ? 1 : _loop_for
+            loops_left: (_anim_state == CASSETTE_ANIM.Once) ? 1 : _loop_for
         };
         
         active_transitions[$ _key] = _manager;
         
         // Return a new builder that operates on the manager's queue.
-        return new EaseChainBuilder(_manager.queue);
+        return new ChainBuilder(_manager.queue);
     }
     
     /// @function update()
@@ -104,20 +104,20 @@ function ease() constructor{
             var _current_def = _manager.queue[_manager.current_index];
 
             // 1. Update Timer
-            if (EASE_USE_DELTA_TIME) { _manager.timer += (delta_time / 1000000); } 
+            if (CASSETTE_USE_DELTA_TIME) { _manager.timer += (delta_time / 1000000); } 
             else { _manager.timer++; }
 
             var _raw_progress = min(1, _manager.timer / _current_def.duration);
             var _eased_progress = 0;
-            var _ease_source = _current_def.ease_func;
+            var _CASSETTE_source = _current_def.CASSETTE_func;
             
             // --- Handle both regular functions and custom curves ---
-            if (is_struct(_ease_source) && variable_struct_exists(_ease_source, "__is_anim_curve")) {
+            if (is_struct(_CASSETTE_source) && variable_struct_exists(_CASSETTE_source, "__is_anim_curve")) {
                 // It's a custom curve object, so evaluate it
-                _eased_progress = animcurve_channel_evaluate(_ease_source.channel, _raw_progress);
+                _eased_progress = animcurve_channel_evaluate(_CASSETTE_source.channel, _raw_progress);
             } else {
                 // It's a regular easing method, so call it
-                _eased_progress = _ease_source(_raw_progress);
+                _eased_progress = _CASSETTE_source(_raw_progress);
             }
 
             // 2. Set Value
@@ -126,8 +126,8 @@ function ease() constructor{
             
             // 3. Handle Completion or Next in Chain
             if (_raw_progress >= 1) {
-                var _is_looping = _current_def.anim_state == EASE_ANIM.Loop;
-                var _is_pingpong = _current_def.anim_state == EASE_ANIM.PingPong;
+                var _is_looping = _current_def.anim_state == CASSETTE_ANIM.Loop;
+                var _is_pingpong = _current_def.anim_state == CASSETTE_ANIM.PingPong;
 
                 // Check loop counter
                 if (_manager.loops_left > 0 && (_is_looping || (_is_pingpong && _manager.direction == -1))) {
@@ -149,7 +149,7 @@ function ease() constructor{
                         _manager.current_val = _next_def.from_val;
                         _manager.timer = 0;
                         _manager.direction = 1;
-                        _manager.loops_left = (_next_def.anim_state == EASE_ANIM.Once) ? 1 : _next_def.loops_left;
+                        _manager.loops_left = (_next_def.anim_state == CASSETTE_ANIM.Once) ? 1 : _next_def.loops_left;
                     } 
                     // Otherwise, the entire chain is done.
                     else {
@@ -390,8 +390,8 @@ function ease() constructor{
     static InElastic = function(progress) {
         if (progress == 0) return 0;
         if (progress == 1) return 1;
-        // Note: 10.75 = (EASE_ELASTIC_PERIOD1_DIV * 3 + 1.75) if needed, relates to phase shift
-        return -power(2, 10 * progress - 10) * sin((progress * 10 - 10.75) * EASE_ELASTIC_C4);
+        // Note: 10.75 = (CASSETTE_ELASTIC_PERIOD1_DIV * 3 + 1.75) if needed, relates to phase shift
+        return -power(2, 10 * progress - 10) * sin((progress * 10 - 10.75) * CASSETTE_ELASTIC_C4);
     };
 
     /// @function OutElastic(progress)
@@ -401,7 +401,7 @@ function ease() constructor{
         if (progress == 0) return 0;
         if (progress == 1) return 1;
         // Note: 0.75 = related to phase shift
-        return power(2, -10 * progress) * sin((progress * 10 - 0.75) * EASE_ELASTIC_C4) + 1;
+        return power(2, -10 * progress) * sin((progress * 10 - 0.75) * CASSETTE_ELASTIC_C4) + 1;
     };
 
     /// @function InOutElastic(progress)
@@ -410,10 +410,10 @@ function ease() constructor{
     static InOutElastic = function(progress) {
         if (progress == 0) return 0;
         if (progress == 1) return 1;
-        // Note: 11.125 = (EASE_ELASTIC_PERIOD2_DIV * 2 + 2.125) if needed, relates to phase shift
+        // Note: 11.125 = (CASSETTE_ELASTIC_PERIOD2_DIV * 2 + 2.125) if needed, relates to phase shift
         return (progress < 0.5)
-            ? -(power(2, 20 * progress - 10) * sin((20 * progress - 11.125) * EASE_ELASTIC_C5)) / 2
-            : (power(2, -20 * progress + 10) * sin((20 * progress - 11.125) * EASE_ELASTIC_C5)) / 2 + 1;
+            ? -(power(2, 20 * progress - 10) * sin((20 * progress - 11.125) * CASSETTE_ELASTIC_C5)) / 2
+            : (power(2, -20 * progress + 10) * sin((20 * progress - 11.125) * CASSETTE_ELASTIC_C5)) / 2 + 1;
     };
 
     // --- Back ---
@@ -421,14 +421,14 @@ function ease() constructor{
     /// @description Back easing in. Overshoots then settles.
     /// @param {real} progress The normalized progress of the tween (0 to 1).
     static InBack = function(progress) {
-        return EASE_BACK_C3 * progress * progress * progress - EASE_BACK_C1 * progress * progress;
+        return CASSETTE_BACK_C3 * progress * progress * progress - CASSETTE_BACK_C1 * progress * progress;
     };
 
     /// @function OutBack(progress)
     /// @description Back easing out. Overshoots then settles.
     /// @param {real} progress The normalized progress of the tween (0 to 1).
     static OutBack = function(progress) {
-        return 1 + EASE_BACK_C3 * power(progress - 1, 3) + EASE_BACK_C1 * power(progress - 1, 2);
+        return 1 + CASSETTE_BACK_C3 * power(progress - 1, 3) + CASSETTE_BACK_C1 * power(progress - 1, 2);
     };
 
     /// @function InOutBack(progress)
@@ -436,8 +436,8 @@ function ease() constructor{
     /// @param {real} progress The normalized progress of the tween (0 to 1).
     static InOutBack = function(progress) {
         return (progress < 0.5)
-            ? (power(2 * progress, 2) * ((EASE_BACK_C2 + 1) * 2 * progress - EASE_BACK_C2)) / 2
-            : (power(2 * progress - 2, 2) * ((EASE_BACK_C2 + 1) * (progress * 2 - 2) + EASE_BACK_C2) + 2) / 2;
+            ? (power(2 * progress, 2) * ((CASSETTE_BACK_C2 + 1) * 2 * progress - CASSETTE_BACK_C2)) / 2
+            : (power(2 * progress - 2, 2) * ((CASSETTE_BACK_C2 + 1) * (progress * 2 - 2) + CASSETTE_BACK_C2) + 2) / 2;
     };
 
     // --- Bounce ---
@@ -445,17 +445,17 @@ function ease() constructor{
     /// @description Bounce easing out.
     /// @param {real} progress The normalized progress of the tween (0 to 1).
     static OutBounce = function(progress) {
-        if (progress < EASE_BOUNCE_T1) { // < 1 / 2.75
-            return EASE_BOUNCE_N1 * progress * progress;
-        } else if (progress < EASE_BOUNCE_T2) { // < 2 / 2.75
-            progress -= EASE_BOUNCE_O1; // -= 1.5 / 2.75
-            return EASE_BOUNCE_N1 * progress * progress + EASE_BOUNCE_A1; // + 0.75
-        } else if (progress < EASE_BOUNCE_T3) { // < 2.5 / 2.75
-            progress -= EASE_BOUNCE_O2; // -= 2.25 / 2.75
-            return EASE_BOUNCE_N1 * progress * progress + EASE_BOUNCE_A2; // + 0.9375
+        if (progress < CASSETTE_BOUNCE_T1) { // < 1 / 2.75
+            return CASSETTE_BOUNCE_N1 * progress * progress;
+        } else if (progress < CASSETTE_BOUNCE_T2) { // < 2 / 2.75
+            progress -= CASSETTE_BOUNCE_O1; // -= 1.5 / 2.75
+            return CASSETTE_BOUNCE_N1 * progress * progress + CASSETTE_BOUNCE_A1; // + 0.75
+        } else if (progress < CASSETTE_BOUNCE_T3) { // < 2.5 / 2.75
+            progress -= CASSETTE_BOUNCE_O2; // -= 2.25 / 2.75
+            return CASSETTE_BOUNCE_N1 * progress * progress + CASSETTE_BOUNCE_A2; // + 0.9375
         } else {
-            progress -= EASE_BOUNCE_O3; // -= 2.625 / 2.75
-            return EASE_BOUNCE_N1 * progress * progress + EASE_BOUNCE_A3; // + 0.984375
+            progress -= CASSETTE_BOUNCE_O3; // -= 2.625 / 2.75
+            return CASSETTE_BOUNCE_N1 * progress * progress + CASSETTE_BOUNCE_A3; // + 0.984375
         }
     };
 
@@ -465,7 +465,7 @@ function ease() constructor{
     static InBounce = function(progress) {
         // Re-use OutBounce by inverting the progress
         // Need to call the OutBounce function associated *with this instance*
-        return 1 - ease.OutBounce(1 - progress);
+        return 1 - self.OutBounce(1 - progress);
     };
 
     /// @function InOutBounce(progress)
@@ -475,8 +475,8 @@ function ease() constructor{
         // Re-use OutBounce by inverting/scaling the progress
         // Need to call the OutBounce function associated *with this instance*
         return (progress < 0.5)
-            ? (1 - ease.OutBounce(1 - 2 * progress)) / 2
-            : (1 + ease.OutBounce(2 * progress - 1)) / 2;
+            ? (1 - self.OutBounce(1 - 2 * progress)) / 2
+            : (1 + self.OutBounce(2 * progress - 1)) / 2;
     };
 }
 
