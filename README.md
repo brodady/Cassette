@@ -36,7 +36,7 @@ You can now start, stop, and get values from the static `ease` manager anywhere 
 To start a new animation, use `.transition()`. You can chain multiple tweens together using `.add()`.
 
 ```gml
-// oPlayer :: Create Event
+// Create Event
 
 // Animate from current x to x+200, then hold position for 30 frames
 ease.transition("player_x", x, x + 200, 60, ease.OutExpo)
@@ -49,7 +49,7 @@ ease.transition("player_y", y, y + 100, 90, ease.OutBounce, CASSETTE_ANIM.PingPo
 To get the current value of an animation, use `ease.get_value()`. Apply this value in a Step or Draw event.
 
 ```gml
-// oPlayer :: Step Event
+// Step Event
 
 // The second argument is a default value if the animation isn't active
 x = ease.get_value("player_x", x);
