@@ -1,6 +1,6 @@
 # Cassette
 
-A lightweight, self-contained GML script for creating smooth animations. Ease provides a rich collection of standard easing functions and a simple system for building complex, chainable transitions. 
+A lightweight, self-contained GML script for creating smooth animations. Cassette provides a rich collection of standard easing functions and a simple system for building complex, chainable transitions. 
 
 Animate anything from UI elements to character movements with just a few lines of code.
 
