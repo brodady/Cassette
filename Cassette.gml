@@ -2,7 +2,7 @@
 // A portable collection of easing functions in a handy literal syntax e.g. "ease.InOutExpo(_t)"
 // Features a simple yet powerful animation system with chainable transitions.
 // -- by:    Mr. Giff
-// -- ver:  1.1.0 (Changed name for better experience and namespace, fixed chaining)
+// -- ver:  1.1.1 (Added checks for negatives before sqrt ops to prevent numerical instability)
 // -- lic:    MIT
 
 // --- Take time in Seconds if true (e.g 0.9) vs Frames (e.g 120)
@@ -364,23 +364,31 @@ function Cassette() constructor{
     /// @description Circular easing in.
     /// @param {real} progress The normalized progress of the tween (0 to 1).
     static InCirc = function(progress) {
-        return 1 - sqrt(1 - power(progress, 2));
+        var _inner = 1 - power(progress, 2);
+        return 1 - ((sign(_inner) == -1)? 0 : sqrt(_inner));
     };
 
     /// @function OutCirc(progress)
     /// @description Circular easing out.
     /// @param {real} progress The normalized progress of the tween (0 to 1).
     static OutCirc = function(progress) {
-        return sqrt(1 - power(progress - 1, 2));
+        var _inner = 1 - power(progress - 1, 2);
+        return (sign(_inner) == -1)? 0 : sqrt(_inner);
     };
 
     /// @function InOutCirc(progress)
     /// @description Circular easing in and out.
     /// @param {real} progress The normalized progress of the tween (0 to 1).
     static InOutCirc = function(progress) {
-        return (progress < 0.5)
-            ? (1 - sqrt(1 - power(2 * progress, 2))) / 2
-            : (sqrt(1 - power(-2 * progress + 2, 2)) + 1) / 2;
+        if (progress < 0.5) {
+            var _inner = 1 - power(2 * progress, 2);
+            var _sqrt = (sign(_inner) == -1)? 0 : sqrt(_inner);
+            return (1 - _sqrt) / 2;
+        } else {
+            var _inner = 1 - power(-2 * progress + 2, 2);
+            var _sqrt = (sign(_inner) == -1)? 0 : sqrt(_inner);
+            return (_sqrt + 1) / 2;
+        }
     };
 
     // --- Elastic ---
