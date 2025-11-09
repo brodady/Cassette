@@ -2,7 +2,7 @@
 // A portable collection of easing functions in a handy literal syntax e.g. "ease.InOutExpo(_t)"
 // Features a simple yet powerful animation system with chainable transitions.
 // -- by:    Mr. Giff
-// -- ver:  1.1.1 (Added checks for negatives before sqrt ops to prevent numerical instability)
+// -- ver:  1.1.2 (Added support for accepting a custom interpolation functions, i.e. 'derp')
 // -- lic:    MIT
 
 // --- Take time in Seconds if true (e.g 0.9) vs Frames (e.g 120)
@@ -70,11 +70,12 @@ function Cassette() constructor{
     
     /// @function transition(key, from, to, duration, func, [anim_state], [loop_for])
     /// @description Starts a new transition sequence and returns a chainable object.
-    static transition = function(_key, _from, _to, _duration, _func, _anim_state = CASSETTE_ANIM.Once, _loop_for = -1) {
+    static transition = function(_key, _from, _to, _duration, _func, _anim_state = CASSETTE_ANIM.Once, _loop_for = -1, _lerp_func = lerp) {
         // This is the definition for the FIRST transition in the sequence.
         var _first_definition = {
             from_val: _from, to_val: _to, duration: _duration, CASSETTE_func: _func,
-            anim_state: _anim_state, loops_left: _loop_for
+            anim_state: _anim_state, loops_left: _loop_for,
+            lerp_func: _lerp_func
         };
         
         // The manager holds the queue and the LIVE state of the currently running animation.
@@ -109,6 +110,7 @@ function Cassette() constructor{
 
             var _raw_progress = min(1, _manager.timer / _current_def.duration);
             var _eased_progress = 0;
+            var _lerper = _current.def.lerp_func;
             var _CASSETTE_source = _current_def.CASSETTE_func;
             
             // --- Handle both regular functions and custom curves ---
@@ -121,8 +123,8 @@ function Cassette() constructor{
             }
 
             // 2. Set Value
-            if (_manager.direction == 1) { _manager.current_val = lerp(_current_def.from_val, _current_def.to_val, _eased_progress); } 
-            else { _manager.current_val = lerp(_current_def.to_val, _current_def.from_val, _eased_progress); }
+            if (_manager.direction == 1) { _manager.current_val = _lerper(_current_def.from_val, _current_def.to_val, _eased_progress); } 
+            else { _manager.current_val = _lerper(_current_def.to_val, _current_def.from_val, _eased_progress); }
             
             // 3. Handle Completion or Next in Chain
             if (_raw_progress >= 1) {
