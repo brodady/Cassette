@@ -2,11 +2,14 @@
 // A portable collection of easing functions in a handy literal syntax e.g. "ease.InOutExpo(_t)"
 // Features a simple yet powerful animation system with chainable transitions.
 // -- by:    Mr. Giff
-// -- ver:  1.1.2 (Added support for accepting a custom interpolation functions, i.e. 'derp')
+// -- ver:  1.2.0 (Added '.wait' method to builder chain and simplified chain internals via a static internal helper method. Also fixed mistake with custom interp functions)
 // -- lic:    MIT
 
 // --- Take time in Seconds if true (e.g 0.9) vs Frames (e.g 120)
 #macro CASSETTE_USE_DELTA_TIME false
+
+// --- Whether animations should start playing or be started manually with the '.play' method
+#macro CASSETTE_AUTO_START false 
 
 // "Fast Math"
 // --- Bounce Constants ---
@@ -29,7 +32,7 @@
 #macro CASSETTE_ELASTIC_C5 ((2 * pi) / CASSETTE_ELASTIC_PERIOD2_DIV) // Constant for InOut Elastic period
 
 // --- Back Constants ---
-#macro CASSETTE_BACK_S1 1.70158                 // Overshoot amount factor
+#macro CASSETTE_BACK_S1 1.70158                    // Overshoot amount factor
 #macro CASSETTE_BACK_S2 (CASSETTE_BACK_S1 * 1.525) // Overshoot amount factor for InOut
 #macro CASSETTE_BACK_C1 CASSETTE_BACK_S1           // Keep c1 for consistency
 #macro CASSETTE_BACK_C2 CASSETTE_BACK_S2           // Keep c2 for consistency
@@ -64,6 +67,20 @@ function Cassette() constructor{
             array_push(queue, _next_definition);
             return self;
         }
+        
+        /// @function wait(duration)
+        /// @desc Adds a pause to the sequence for a given duration.
+        /// @param {real} _duration The time to wait (in frames or seconds, matching CASSETTE_USE_DELTA_TIME).
+        wait = function(_duration) {
+            var _wait_definition = {
+                is_wait: true, // flag for the update method
+                duration: _duration,
+                anim_state: CASSETTE_ANIM.Once,
+                loops_left: 1                   
+            };
+            array_push(queue, _wait_definition);
+            return self;
+        }
     }
     
     // --- Public Methods ---
@@ -71,19 +88,19 @@ function Cassette() constructor{
     /// @function transition(key, from, to, duration, func, [anim_state], [loop_for])
     /// @description Starts a new transition sequence and returns a chainable object.
     static transition = function(_key, _from, _to, _duration, _func, _anim_state = CASSETTE_ANIM.Once, _loop_for = -1, _lerp_func = lerp) {
-        // This is the definition for the FIRST transition in the sequence.
+        // This is the definition for the first transition in the sequence.
         var _first_definition = {
             from_val: _from, to_val: _to, duration: _duration, CASSETTE_func: _func,
-            anim_state: _anim_state, loops_left: _loop_for,
-            lerp_func: _lerp_func
+            anim_state: _anim_state, loops_left: _loop_for
         };
         
-        // The manager holds the queue and the LIVE state of the currently running animation.
-        var _manager = {
+        // The manager holds the queue and the live state of the currently running animation.
+        var _manager = { 
             queue: [_first_definition],
             current_index: 0,
+            lerp_func: _lerp_func,
             
-            // Live state for the current animation
+            // State
             current_val: _from,
             timer: 0,
             direction: 1,
@@ -100,25 +117,46 @@ function Cassette() constructor{
     /// @description Updates all active transitions.
     static update = function() {
         var _completed_keys = [];
-
-        var _update_callback = function(_key, _manager) {
+        
+        var _keys = variable_struct_get_names(active_transitions);
+        for (var i = 0; i < array_length(_keys); i++) {
+            var _key = _keys[i];
+            
+            if (!variable_struct_exists(active_transitions, _key)) {
+                continue;
+            }
+            
+            var _manager = active_transitions[$ _key];
             var _current_def = _manager.queue[_manager.current_index];
 
+            // --- Handle Wait Segment ---
+            if (variable_struct_exists(_current_def, "is_wait")) {
+                if (CASSETTE_USE_DELTA_TIME) { _manager.timer += (delta_time / 1000000); } 
+                else { _manager.timer++; }
+
+                var _raw_progress = min(1, _manager.timer / _current_def.duration);
+                
+                if (_raw_progress >= 1) {
+                    _move_to_next_segment(_manager, _key, _completed_keys);
+                }
+                continue;
+            }
+
+            // --- Animation Logic ---
+            
             // 1. Update Timer
             if (CASSETTE_USE_DELTA_TIME) { _manager.timer += (delta_time / 1000000); } 
             else { _manager.timer++; }
 
             var _raw_progress = min(1, _manager.timer / _current_def.duration);
             var _eased_progress = 0;
-            var _lerper = _current.def.lerp_func;
+            
+            var _lerper = _manager.lerp_func;
             var _CASSETTE_source = _current_def.CASSETTE_func;
             
-            // --- Handle both regular functions and custom curves ---
             if (is_struct(_CASSETTE_source) && variable_struct_exists(_CASSETTE_source, "__is_anim_curve")) {
-                // It's a custom curve object, so evaluate it
                 _eased_progress = animcurve_channel_evaluate(_CASSETTE_source.channel, _raw_progress);
             } else {
-                // It's a regular easing method, so call it
                 _eased_progress = _CASSETTE_source(_raw_progress);
             }
 
@@ -130,38 +168,37 @@ function Cassette() constructor{
             if (_raw_progress >= 1) {
                 var _is_looping = _current_def.anim_state == CASSETTE_ANIM.Loop;
                 var _is_pingpong = _current_def.anim_state == CASSETTE_ANIM.PingPong;
+                var _is_once = _current_def.anim_state == CASSETTE_ANIM.Once;
 
-                // Check loop counter
-                if (_manager.loops_left > 0 && (_is_looping || (_is_pingpong && _manager.direction == -1))) {
-                    _manager.loops_left--;
-                }
+                if (_is_once) {
+                    // 'Once' animations always move to the next segment when done.
+                    _move_to_next_segment(_manager, _key, _completed_keys);
+                
+                } else {
+                    // Handle 'Loop' and 'PingPong'
+                    
+                    // Check loop counter (only decrement for finite loops)
+                    if (_manager.loops_left > 0 && (_is_looping || (_is_pingpong && _manager.direction == -1))) {
+                        _manager.loops_left--;
+                    }
 
-                // If loops remain, repeat the current animation segment
-                if (_manager.loops_left != 0) {
-                    if (_is_looping) { _manager.timer = 0; } 
-                    else if (_is_pingpong) { _manager.timer = 0; _manager.direction *= -1; }
-                } 
-                // Otherwise, move to the next transition in the chain
-                else {
-                    _manager.current_index++;
-                    // If there's another transition in the queue...
-                    if (_manager.current_index < array_length(_manager.queue)) {
-                        var _next_def = _manager.queue[_manager.current_index];
-                        // ...initialize the manager's state for it.
-                        _manager.current_val = _next_def.from_val;
-                        _manager.timer = 0;
-                        _manager.direction = 1;
-                        _manager.loops_left = (_next_def.anim_state == CASSETTE_ANIM.Once) ? 1 : _next_def.loops_left;
+                    // If loops remain (or are infinite), repeat the current segment
+                    if (_manager.loops_left != 0) {
+                        if (_is_looping) { 
+                            _manager.timer = 0; 
+                        } 
+                        else if (_is_pingpong) { 
+                            _manager.timer = 0; 
+                            _manager.direction *= -1; 
+                        }
                     } 
-                    // Otherwise, the entire chain is done.
+                    // Otherwise, all loops are done, move to the next transition
                     else {
-                        array_push(_completed_keys, _key);
+                        _move_to_next_segment(_manager, _key, _completed_keys);
                     }
                 }
             }
-        };
-
-        struct_foreach(active_transitions, _update_callback);
+        }
         
         for (var i = 0; i < array_length(_completed_keys); i++) {
             variable_struct_remove(active_transitions, _completed_keys[i]);
@@ -226,6 +263,35 @@ function Cassette() constructor{
             channel: _channel
         };
     }
+
+    // --- Private Helper ---
+    /// @desc (Internal) Advances a manager to its next segment or marks it for completion.
+    static _move_to_next_segment = function(_manager, _key_for_completion, _completed_keys_ref) {
+        _manager.current_index++;
+        
+        // If there's another transition in the queue...
+        if (_manager.current_index < array_length(_manager.queue)) {
+            var _next_def = _manager.queue[_manager.current_index];
+            
+            if (variable_struct_exists(_next_def, "is_wait")) {
+                // Next is a wait: Just reset timer, keep current_val.
+                _manager.timer = 0;
+                _manager.direction = 1; 
+                _manager.loops_left = 1;
+            } else {
+                // Next is a regular animation: Initialize its state.
+                _manager.current_val = _next_def.from_val;
+                _manager.timer = 0;
+                _manager.direction = 1;
+                _manager.loops_left = (_next_def.anim_state == CASSETTE_ANIM.Once) ? 1 : _next_def.loops_left;
+            }
+        } 
+        // Otherwise, the entire chain is done.
+        else {
+            // Add the key to the array
+            array_push(_completed_keys_ref, _key_for_completion);
+        }
+    };
 
     // --- Sine ---
     /// @function InSine(progress)
