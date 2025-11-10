@@ -33,7 +33,7 @@ ease = new Cassette();
 
 You can now start, stop, and get values from the static `ease` manager anywhere in your code.
 
-To start a new animation, use `.transition()`. You can chain multiple tweens together using `.add()`.
+To start a new animation, use `.transition()`. You can chain multiple tweens (tracks) together using `.add()`.
 
 ```gml
 // Create Event
