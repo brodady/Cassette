@@ -1,8 +1,8 @@
 /// --- Cassette ---
-// A simple yet powerful animation system singleton with chainable transitions.
+// A simple yet powerful animation system with chainable transitions.
 // Featuring a portable collection of easing functions in a handy literal syntax. e.g. "ease.InOutExpo(_t)"
 // -- by:   Mr. Giff
-// -- ver:  1.3.0 (New playback controls and upgrades: play, skip, back, seek, pause, ffwd, rewind, get_speed, set_speed, is_paused)
+// -- ver:  1.3.1 (Removed static definitions on most methods and internals, changing from a singleton for all animation to an instanceable controller)
 // -- lic:  MIT
 
 // --- Take time in Seconds if true (e.g 0.9) vs Frames (e.g 120)
@@ -53,7 +53,7 @@ enum CASSETTE_ANIM {
 /// @description A centralized, self-contained class for chained, sequenced animations with advanced playback
 function Cassette() constructor{
     
-    static active_transitions = {};
+    active_transitions = {};
 
     // --- Private Chain Builder ---
     // This is returned by 'transition()' to allow for method chaining.
@@ -90,7 +90,7 @@ function Cassette() constructor{
     
     /// @function transition(key, from, to, duration, func, [anim_state], [loop_for], [custom_lerp_func])
     /// @description Starts a new transition sequence and returns a chainable object.
-    static transition = function(_key, _from, _to, _duration, _func, _anim_state = CASSETTE_ANIM.Once, _loop_for = -1, _lerp_func = lerp) {
+    transition = function(_key, _from, _to, _duration, _func, _anim_state = CASSETTE_ANIM.Once, _loop_for = -1, _lerp_func = lerp) {
         // This is the definition for the first transition in the sequence.
         var _first_definition = {
             from_val: _from, to_val: _to, duration: _duration, CASSETTE_func: _func,
@@ -120,7 +120,7 @@ function Cassette() constructor{
     
     /// @function update()
     /// @description Updates all active transitions.
-    static update = function() {
+    update = function() {
         var _completed_keys = [];
         
         var _keys = variable_struct_get_names(active_transitions);
@@ -253,7 +253,7 @@ function Cassette() constructor{
     /// @function play([keys])
     /// @desc Resumes one or all active transitions.
     /// @param {String|Array<String>} [keys] Optional: A key or array of keys. Affects all if omitted.
-    static play = function(_keys = undefined) {
+    play = function(_keys = undefined) {
         _apply_to_managers(_keys, function(_manager, _data, _key) {
             _manager.is_paused = false;
         });
@@ -262,7 +262,7 @@ function Cassette() constructor{
     /// @function pause([keys])
     /// @desc Pauses one or all active transitions.
     /// @param {String|Array<String>} [keys] Optional: A key or array of keys. Affects all if omitted.
-    static pause = function(_keys = undefined) {
+    pause = function(_keys = undefined) {
         _apply_to_managers(_keys, function(_manager, _data, _key) {
             _manager.is_paused = true;
         });
@@ -272,7 +272,7 @@ function Cassette() constructor{
     /// @description Immediately stops and removes a specific transition sequence.
     /// @param {string} key The unique name of the transition sequence to stop.
     /// @returns {bool} Returns true if a transition was found and stopped, otherwise false.
-    static stop = function(_key) {
+    stop = function(_key) {
         if (variable_struct_exists(active_transitions, _key)) {
             variable_struct_remove(active_transitions, _key);
             return true;
@@ -303,7 +303,7 @@ function Cassette() constructor{
     /// @function rewind([keys])
     /// @desc Reset one or all transitions to their very beginning (first track).
     /// @param {String|Array<String>} [keys] Optional: A key or array of keys. Affects all if omitted.
-    static rewind = function(_keys = undefined) {
+    rewind = function(_keys = undefined) {
         _apply_to_managers(_keys, function(_manager, _data, _key) {
             _init_track(_manager, 0); 
     
@@ -317,12 +317,12 @@ function Cassette() constructor{
     /// @desc Seeks forward/backward by a duration (in frames/seconds).
     /// @param {Real} amount The duration to seek (can be negative).
     /// @param {String|Array<String>} [keys] Optional: A key or array of keys. Affects all if omitted.
-    static seek = function(_amount, _keys = undefined) {
+    seek = function(_amount, _keys = undefined) {
         _apply_to_managers(_keys, _seek_manager, _amount);
     }
 
     /// @function skip([keys])
-    static skip = function(_keys = undefined) {
+    skip = function(_keys = undefined) {
         _apply_to_managers(_keys, function(_manager, _data, _key) {
             if (_manager.current_index + 1 < array_length(_manager.queue)) {
                 _init_track(_manager, _manager.current_index + 1);
@@ -337,7 +337,7 @@ function Cassette() constructor{
     }
 
     /// @function back([keys])
-    static back = function(_keys = undefined) {
+    back = function(_keys = undefined) {
         _apply_to_managers(_keys, function(_manager, _data, _key) {
             if (_manager.current_index > 0) {
                 _init_track(_manager, _manager.current_index - 1);
@@ -351,7 +351,7 @@ function Cassette() constructor{
     /// @description Returns the playback speed of a specific transition.
     /// @param {String} _key The unique name of the transition sequence.
     /// @returns {Real|Undefined} Returns the speed (e.g., 1.0) if the transition exists, or undefined if it does not.
-    static get_speed = function(_key) {
+    get_speed = function(_key) {
         if (variable_struct_exists(active_transitions, _key)) {
             return active_transitions[$ _key].playback_speed;
         }
@@ -362,7 +362,7 @@ function Cassette() constructor{
     /// @desc Sets playback speed for one or all transitions (1 = normal, 2 = 2x, -1 = reverse).
     /// @param {Real} speed The new playback speed multiplier.
     /// @param {String|Array<String>} [keys] Optional: A key or array of keys. Affects all if omitted.
-    static set_speed = function(_speed, _keys = undefined) {
+    set_speed = function(_speed, _keys = undefined) {
         _apply_to_managers(_keys, function(_manager, _speed_data, _key) { 
             _manager.playback_speed = _speed_data; 
         }, _speed);
@@ -370,7 +370,7 @@ function Cassette() constructor{
 
     /// @function clear_all()
     /// @description Immediately stops and removes all active transition sequences.
-    static clear_all = function() {
+    clear_all = function() {
         active_transitions = {};
     }
 
@@ -378,7 +378,7 @@ function Cassette() constructor{
 	/// @param {String} _key The unique name of the transition sequence.
 	/// @param {Real} _default_val The default value to fallback to.
     /// @description Returns the current value of a named transition sequence.
-    static get_value = function(_key, _default_val) {
+    get_value = function(_key, _default_val) {
         if (variable_struct_exists(active_transitions, _key)) {
             return active_transitions[$ _key].current_val;
         }
@@ -388,7 +388,7 @@ function Cassette() constructor{
     /// @function is_active(key)
 	/// @param {String} _key The unique name of the transition sequence.
     /// @description Returns true if a specific transition sequence is in process (if it exists, not the same as paused).
-    static is_active = function(_key) {
+    is_active = function(_key) {
         return variable_struct_exists(active_transitions, _key);
     }
 	
@@ -396,7 +396,7 @@ function Cassette() constructor{
     /// @description Returns true if a specific transition sequence is currently paused.
     /// @param {String} _key The unique name of the transition sequence.
     /// @returns {Bool|Undefined} Returns true/false if the transition exists, or undefined if it does not.
-    static is_paused = function(_key) {
+    is_paused = function(_key) {
         if (variable_struct_exists(active_transitions, _key)) {
             return active_transitions[$ _key].is_paused;
         }
@@ -408,7 +408,7 @@ function Cassette() constructor{
     /// @param {Asset.GMAnimCurve|Struct} curve_asset_or_struct The Animation Curve asset (e.g. ac_MyCurve) or a pre-fetched struct from animcurve_get().
     /// @param {real} [channel_index] The channel index within the curve to use.
     /// @returns {Struct|undefined} A special struct for the update method to recognize, or undefined on failure.
-    static custom = function(_curve_asset_or_struct, _channel_index = 0) {
+    custom = function(_curve_asset_or_struct, _channel_index = 0) {
         var _curve_struct = _curve_asset_or_struct;
         
         // If not a struct, assume it's an asset ID and try to get the struct
@@ -435,7 +435,7 @@ function Cassette() constructor{
     /// @param {Real} _index The index in the queue to set.
     /// @param {Real} [_timer] The new timer value (e.g., overflow or underflow).
     /// @param {Real} [_start_dir] 1 = start at beginning, -1 = start at end.
-    static _init_track = function(_manager, _index, _timer = 0, _start_dir = 1) {
+    _init_track = function(_manager, _index, _timer = 0, _start_dir = 1) {
         _manager.current_index = _index;
         var _def = _manager.queue[_index];
         
@@ -453,7 +453,7 @@ function Cassette() constructor{
     }
 
     /// @desc (Internal) Advances a manager to its next track or marks it for completion.
-    static _move_to_next_track = function(_manager, _key_for_completion, _completed_keys_ref, _overflow = 0) {
+    _move_to_next_track = function(_manager, _key_for_completion, _completed_keys_ref, _overflow = 0) {
         if (_manager.current_index + 1 < array_length(_manager.queue)) {
             _init_track(_manager, _manager.current_index + 1, _overflow, 1);
         } 
@@ -463,7 +463,7 @@ function Cassette() constructor{
     };
 
     /// @desc (Internal) Moves a manager to the end of its previous track.
-    static _handle_backward_completion = function(_manager, _key_for_completion, _underflow) {
+    _handle_backward_completion = function(_manager, _key_for_completion, _underflow) {
         if (_manager.current_index > 0) {
             var _prev_index = _manager.current_index - 1;
             _init_track(_manager, _prev_index, _underflow, -1);
@@ -474,7 +474,7 @@ function Cassette() constructor{
         }
     };
     /// @desc (Internal) Applies a callback to one, many, or all active transitions.
-    static _apply_to_managers = function(_target_keys, _action_func, _data = undefined) {
+    _apply_to_managers = function(_target_keys, _action_func, _data = undefined) {
         if (_target_keys == undefined) {
             // --- Affect All ---
             var _keys = variable_struct_get_names(active_transitions);
@@ -501,7 +501,7 @@ function Cassette() constructor{
     }
     
     /// @desc (Internal) Re-evaluates and sets a manager's current_val based on its timer.
-    static _evaluate_and_set_value = function(_manager) {
+    _evaluate_and_set_value = function(_manager) {
         // If the current spot is a wait, value is unchanged
         var _current_def = _manager.queue[_manager.current_index];
         if (variable_struct_exists(_current_def, "is_wait")) {
@@ -530,7 +530,7 @@ function Cassette() constructor{
     }
 
     /// @desc (Internal) The core logic for seeking.
-    static _seek_manager = function(_manager, _seek_amount, _key) { 
+    _seek_manager = function(_manager, _seek_amount, _key) { 
     
         _manager.timer += _seek_amount;
         
@@ -600,7 +600,7 @@ function Cassette() constructor{
             // --- Check for loop/pong on CURRENT track first ---
             if ((_is_looping || _is_pingpong) && _manager.loops_left != 0) {
                 
-                if (_duration <= 0) { // Avoid divide-by-zero
+                if (_duration <= 0) { 
                     _manager.timer = 0;
                     _manager.direction = 1;
                     break;
@@ -636,7 +636,7 @@ function Cassette() constructor{
             else {
                 _manager.timer = 0; 
                 _manager.direction = 1; 
-                break; 
+                break;
             }
         }
         
