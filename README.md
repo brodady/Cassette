@@ -141,6 +141,11 @@ ease.transition("my_value", 0, 100, 120, my_custom_ease);
 // Apply the value
 my_variable = ease.get_value("my_value", my_variable);
 ```
+## Feature Roadmap
+
+Cassette is actively transitioning from a simple easing library with a "fire-and-forget" player bolted on, to something far more featureful. The following features have been marked for inclusion in the near future: 
+- Callback functions for events (i.e. 'track_end(func)' or 'sequence_end(func)') 
+- Accepting structs to tween multiple sets of values for complex state changes through a single transition (i.e. vectors or ui styles). 
 
 ## License
 
