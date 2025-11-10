@@ -52,6 +52,7 @@ To get the current value of an animation, use `ease.get_value()`. Apply this val
 
 ```gml
 // Step Event
+ease.update(); 
 
 // The second argument is a default value if the animation isn't active
 x = ease.get_value("player_x", x);
@@ -99,6 +100,7 @@ Checking Status
 Example
 ```gml
 // In a Step Event
+ease.update(); 
 
 // Toggle pause for "player_y"
 if (keyboard_check_pressed(vk_space))
