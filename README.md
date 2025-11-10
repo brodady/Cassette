@@ -25,7 +25,6 @@ ease = new Cassette();
 
 *Note: You can toggle between frame-based and time-based animations by setting the `CASSETTE_USE_DELTA_TIME` macro at the top of the script.*
 
------
 
 ### 3\. Animate\!
 
@@ -143,8 +142,6 @@ ease.transition("my_value", 0, 100, 120, my_custom_ease);
 // Apply the value
 my_variable = ease.get_value("my_value", my_variable);
 ```
-
------
 
 ## License
 
