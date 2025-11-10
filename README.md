@@ -56,7 +56,6 @@ x = ease.get_value("player_x", x);
 y = ease.get_value("player_y", y);
 ```
 
------
 ## Playback Controls
 
 You can control the playback of any active transition. Most control methods can be applied globally (e.g., ease.pause()) to affect all animations, or specifically (e.g., ease.pause("player_x")) to target just one.
