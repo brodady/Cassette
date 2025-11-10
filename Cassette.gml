@@ -634,9 +634,9 @@ function Cassette() constructor{
             } 
             // --- No previous track. This is the beginning. ---
             else {
-                _manager.timer = 0; // Clamp to start
-                _manager.direction = 1; // Reset direction
-                break; // Exit while loop
+                _manager.timer = 0; 
+                _manager.direction = 1; 
+                break; 
             }
         }
         
