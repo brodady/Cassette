@@ -38,13 +38,15 @@ To start a new animation, use `.transition()`. You can chain multiple tweens (tr
 ```gml
 // Create Event
 
-// Animate from current x to x+200, then hold position for 30 frames
+// Animate x to x+200, wait 30 frames, then animate back to original x
 ease.transition("player_x", x, x + 200, 60, ease.OutExpo)
-    .add(x + 200, x + 200, 30, ease.InOutSine);
+    .wait(30)
+    .add(x + 200, x, 60, ease.InExpo);
 
 // Animate y position with a PingPong effect that repeats 3 times
 ease.transition("player_y", y, y + 100, 90, ease.OutBounce, CASSETTE_ANIM.PingPong, 3);
 ```
+**Note:** By default (CASSETTE_AUTO_START = false), animations must be started manually. You can either call ease.play("player_x") after creating a transition or set CASSETTE_AUTO_START to true at the top of the script.
 
 To get the current value of an animation, use `ease.get_value()`. Apply this value in a Step or Draw event.
 
