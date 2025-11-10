@@ -15,9 +15,7 @@ Animate anything from UI elements to character movements with just a few lines o
 Simply add the `Cassette` script to your GameMaker project.
 
 ### 2\. Usage 
-
-In a persistent controller object, define a Cassette manager. The manager is a singleton for all animations, so you need only define it once.
-
+Define a Cassette manager. 
 I recomnmend using 'ease' for semantic clarity i.e. ease.InOutElastic(t)
 
 ```gml
