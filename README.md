@@ -57,10 +57,73 @@ y = ease.get_value("player_y", y);
 ```
 
 -----
+## Playback Controls
 
-## 🎨 Using Custom Curves
+You can control the playback of any active transition. Most control methods can be applied globally (e.g., ease.pause()) to affect all animations, or specifically (e.g., ease.pause("player_x")) to target just one.
 
-Ease seamlessly integrates with GameMaker's built-in Animation Curves.
+State & Speed
+```gml
+.play([keys]) // Resumes a paused animation.
+
+.pause([keys]) // Pauses an animation.
+
+.stop(key) // Immediately stops and removes a specific animation.
+
+.set_speed(speed, [keys]) // Sets the playback speed. 1.0 is normal, 2.0 is double speed, -1.0 is reverse, and etc.
+```
+
+Navigation & Seeking
+```gml
+.rewind([keys]) // Resets the animation to the very beginning (first track, time 0).
+
+.ffwd([keys]) // Jumps to the very end of the entire chain.
+
+.skip([keys]) // Skips to the start of the next track in the chain.
+
+.back([keys]) // Jumps to the start of the previous track.
+
+.seek(amount, [keys]) // Moves the timer by a specific amount (in frames or seconds).
+```
+
+Checking Status
+```gml
+.is_active(key) // Returns true if an animation with this key exists.
+
+.is_paused(key) // Returns true if the animation is currently paused.
+
+.get_speed(key) // Returns the current playback speed of the animation.
+```
+
+Example
+```gml
+// In a Step Event
+
+// Toggle pause for "player_y"
+if (keyboard_check_pressed(vk_space))
+{
+    if (ease.is_paused("player_y")) {
+        ease.play("player_y");
+    } else {
+        ease.pause("player_y");
+    }
+}
+
+// Set speed to reverse
+if (keyboard_check_pressed(ord("R")))
+{
+    ease.set_speed(-1.0, "player_y");
+}
+
+// Seek forward 30 frames
+if (keyboard_check_pressed(ord("S")))
+{
+    ease.seek(30, "player_y");
+}
+```
+
+## Using Custom Curves
+
+Cassette seamlessly integrates with GameMaker's built-in Animation Curves.
 
 1.  Create an Animation Curve asset in your project (e.g., `ac_MyCurve`).
 2.  Pass it to the `ease.custom()` method to prepare it for use.
@@ -81,7 +144,7 @@ my_variable = ease.get_value("my_value", my_variable);
 
 -----
 
-## 📜 License
+## License
 
 **MIT License**
 
