@@ -2,7 +2,7 @@
 // A simple yet powerful animation system with chainable transitions.
 // Featuring a portable collection of easing functions in a handy literal syntax. e.g. "ease.InOutExpo(_t)"
 // -- by:   Mr. Giff
-// -- ver:  1.4.0 -- Added callback functionality for track end (as argument) and sequence end (on chain.)
+// -- ver:  1.4.1 -- Fixed small typo (removed defunct static call)
 // -- lic:  MIT
 
 // --- Take time in Seconds if true (e.g 0.9) vs Frames (e.g 120)
@@ -305,7 +305,7 @@ function Cassette() constructor{
     /// @function ffwd([keys])
     /// @desc Jumps to the very end of one or all transitions (last track, last frame).
     /// @param {String|Array<String>} [keys] Optional: A key or array of keys. Affects all if omitted.
-    static ffwd = function(_keys = undefined) {
+    ffwd = function(_keys = undefined) {
         _apply_to_managers(_keys, function(_manager, _data, _key) {
             _manager.current_index = array_length(_manager.queue) - 1;
             var _last_def = _manager.queue[_manager.current_index];
