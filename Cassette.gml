@@ -2,7 +2,7 @@
 // A simple yet powerful animation system with chainable transitions.
 // Featuring a portable collection of easing functions in a handy literal syntax. e.g. "ease.InOutExpo(_t)"
 // -- by:   Mr. Giff
-// -- ver:  1.3.1 (Removed static definitions on most methods and internals, changing from a singleton for all animation to an instanceable controller)
+// -- ver:  1.4.0 -- Added callback functionality for track end (as argument) and sequence end (on chain.)
 // -- lic:  MIT
 
 // --- Take time in Seconds if true (e.g 0.9) vs Frames (e.g 120)
@@ -57,31 +57,43 @@ function Cassette() constructor{
 
     // --- Private Chain Builder ---
     // This is returned by 'transition()' to allow for method chaining.
-    function ChainBuilder(_queue_ref) constructor {
-        queue = _queue_ref;
+    function ChainBuilder(_manager_ref) constructor {
+        manager = _manager_ref;
+        queue = _manager_ref.queue;
         
-        /// @function add(from, to, duration, func, [anim_state], [loop_for])
+        /// @function add(from, to, duration, ease_func, [anim_state], [loop_for], [callback])
         /// @desc Adds a new transition to the sequence.
-        add = function(_from, _to, _duration, _func, _anim_state = CASSETTE_ANIM.Once, _loop_for = -1) {
+        add = function(_from, _to, _duration, ease_func, _anim_state = CASSETTE_ANIM.Once, _loop_for = -1, _callback = undefined) {
             var _next_definition = {
-                from_val: _from, to_val: _to, duration: _duration, CASSETTE_func: _func,
-                anim_state: _anim_state, loops_left: _loop_for
+                from_val: _from, to_val: _to, duration: _duration, CASSETTE_func: ease_func,
+                anim_state: _anim_state, loops_left: _loop_for,
+                on_track_end: _callback
             };
             array_push(queue, _next_definition);
             return self;
         } 
         
-        /// @function wait(duration)
+        /// @function wait(duration, [on_track_end])
         /// @desc Adds a pause to the sequence for a given duration.
         /// @param {real} _duration The time to wait (in frames or seconds, matching CASSETTE_USE_DELTA_TIME).
-        wait = function(_duration) {
+        /// @param {Function} [_callback] Optional callback to run when this wait finishes.
+        wait = function(_duration, _callback = undefined) {
             var _wait_definition = {
                 is_wait: true,
                 duration: _duration,
                 anim_state: CASSETTE_ANIM.Once,
-                loops_left: 1                   
+                loops_left: 1,
+                on_track_end: _callback
             };
             array_push(queue, _wait_definition);
+            return self;
+        }
+
+        /// @function on_end(callback_func)
+        /// @desc Sets a callback function to run when the entire sequence is complete.
+        /// @param {Function} _func The function to call.
+        on_end = function(_func) {
+            manager.on_sequence_end = _func;
             return self;
         }
     }
@@ -90,11 +102,12 @@ function Cassette() constructor{
     
     /// @function transition(key, from, to, duration, func, [anim_state], [loop_for], [custom_lerp_func])
     /// @description Starts a new transition sequence and returns a chainable object.
-    transition = function(_key, _from, _to, _duration, _func, _anim_state = CASSETTE_ANIM.Once, _loop_for = -1, _lerp_func = lerp) {
+    transition = function(_key, _from, _to, _duration, _func, _anim_state = CASSETTE_ANIM.Once, _loop_for = -1, _callback = undefined, _lerp_func = lerp) {
         // This is the definition for the first transition in the sequence.
         var _first_definition = {
             from_val: _from, to_val: _to, duration: _duration, CASSETTE_func: _func,
-            anim_state: _anim_state, loops_left: _loop_for
+            anim_state: _anim_state, loops_left: _loop_for,
+            on_track_end: _callback
         };
         
         // The manager holds the queue and the live state of the currently running animation.
@@ -102,10 +115,12 @@ function Cassette() constructor{
             queue: [_first_definition],
             current_index: 0,
             lerp_func: _lerp_func,
+            on_sequence_end: undefined,
             
             // State
             current_val: _from,
             timer: 0,
+      
             direction: 1,
             loops_left: (_anim_state == CASSETTE_ANIM.Once) ? 1 : _loop_for,
             is_paused: !CASSETTE_AUTO_START,
@@ -114,8 +129,8 @@ function Cassette() constructor{
         
         active_transitions[$ _key] = _manager;
         
-        // Return a new builder that operates on the manager's queue.
-        return new ChainBuilder(_manager.queue);
+        // Return a new builder that operates on the manager.
+        return new ChainBuilder(_manager); 
     }
     
     /// @function update()
@@ -272,8 +287,15 @@ function Cassette() constructor{
     /// @description Immediately stops and removes a specific transition sequence.
     /// @param {string} key The unique name of the transition sequence to stop.
     /// @returns {bool} Returns true if a transition was found and stopped, otherwise false.
-    stop = function(_key) {
+    stop = function(_key, _trigger_end_callback = true) {
         if (variable_struct_exists(active_transitions, _key)) {
+            var _manager = active_transitions[$ _key];
+
+            // Callback
+            if (_trigger_end_callback && is_method(_manager.on_sequence_end)) {
+                _manager.on_sequence_end();
+            }
+            
             variable_struct_remove(active_transitions, _key);
             return true;
         }
@@ -296,7 +318,11 @@ function Cassette() constructor{
                 _manager.current_val = _last_def.to_val;
             }
             
-            _manager.is_paused = true; 
+            // Callback
+            if (is_method(_manager.on_sequence_end)) {
+                _manager.on_sequence_end();
+            }
+            stop(_key, false); 
         });
     }
 
@@ -327,11 +353,16 @@ function Cassette() constructor{
             if (_manager.current_index + 1 < array_length(_manager.queue)) {
                 _init_track(_manager, _manager.current_index + 1);
             } else {
-                // At the end, go to the end and pause
+                // At the end. Set final state, call callback, and stop.
                 var _last_index = array_length(_manager.queue) - 1;
                 var _last_def = _manager.queue[_last_index];
-                _init_track(_manager, _last_index, _last_def.duration);
-                _manager.is_paused = true; 
+                _init_track(_manager, _last_index, _last_def.duration); 
+
+                if (is_method(_manager.on_sequence_end)) {
+                    _manager.on_sequence_end();
+                }
+                
+                stop(_key, false); 
             }
         });
     }
@@ -454,10 +485,23 @@ function Cassette() constructor{
 
     /// @desc (Internal) Advances a manager to its next track or marks it for completion.
     _move_to_next_track = function(_manager, _key_for_completion, _completed_keys_ref, _overflow = 0) {
+        
+        // track_end
+        var _current_def = _manager.queue[_manager.current_index];
+        if (is_method(_current_def.on_track_end)) {
+            _current_def.on_track_end();
+        }
+
+        // Move to next track or end sequence
         if (_manager.current_index + 1 < array_length(_manager.queue)) {
             _init_track(_manager, _manager.current_index + 1, _overflow, 1);
         } 
         else {
+            // sequence_end 
+            if (is_method(_manager.on_sequence_end)) {
+                _manager.on_sequence_end();
+            }
+            
             array_push(_completed_keys_ref, _key_for_completion);
         }
     };
