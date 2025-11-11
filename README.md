@@ -16,7 +16,7 @@ Simply add the `Cassette` script to your GameMaker project.
 
 ### 2\. Usage 
 Define a Cassette manager. 
-I recomnmend using 'ease' for semantic clarity i.e. ease.InOutElastic(t)
+I recommend using 'ease' for semantic clarity i.e. ease.InOutElastic(t)
 
 ```gml
 // Create Event
@@ -24,7 +24,6 @@ ease = new Cassette();
 ```
 
 *Note: You can toggle between frame-based and time-based animations by setting the `CASSETTE_USE_DELTA_TIME` macro at the top of the script.*
-
 
 ### 3\. Animate\!
 
@@ -56,6 +55,34 @@ x = ease.get_value("player_x", x);
 y = ease.get_value("player_y", y);
 ```
 
+### 4. Callback functions
+You can execute functions when a single track finishes or when an entire sequence completes.
+- **Track End**: Pass a function as the last argument to ```.add()``` or ```.wait()```.
+- **Sequence End**: Chain the ```.on_end(my_func)``` method.
+
+```gml
+// Create Event
+ease = new Cassette();
+
+// A function to run when the whole chain is done
+var on_my_sequence_complete = function() {
+    show_debug_message("The entire player_x sequence is finished!");
+}
+
+// A function to run when the first track is done
+var on_first_track_complete = function() {
+    show_debug_message("Finished moving to x+200. Waiting...");
+}
+
+// Animate x, with a callback on the first track and a final callback on the sequence
+ease.transition("player_x", x, x + 200, 60, ease.OutExpo, CASSETTE_ANIM.Once, -1, on_first_track_complete)
+    .wait(30)
+    .add(x + 200, x, 60, ease.InExpo)
+    .on_end(on_my_sequence_complete);
+
+ease.play("player_x");
+```
+-----
 ## Playback Controls
 
 You can control the playback of any active transition. Most control methods can be applied globally (e.g., ease.pause()) to affect all animations, or specifically (e.g., ease.pause("player_x")) to target just one.
@@ -141,11 +168,8 @@ ease.transition("my_value", 0, 100, 120, my_custom_ease);
 // Apply the value
 my_variable = ease.get_value("my_value", my_variable);
 ```
-## Feature Roadmap
 
-Cassette is actively transitioning from a simple easing library with a "fire-and-forget" player bolted on, to something far more featureful. The following features have been marked for inclusion in the near future: 
-- Callback functions for events (i.e. 'track_end(func)' or 'sequence_end(func)') 
-- Accepting structs to tween multiple sets of values for complex state changes through a single transition (i.e. vectors or ui styles). 
+-----
 
 ## License
 
