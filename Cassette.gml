@@ -1,20 +1,11 @@
 /// --- Cassette ---
-// A simple yet powerful animation system with chainable transitions.
-// Featuring a portable collection of easing functions in a handy literal syntax. e.g. "ease.InOutExpo(_t)"
-// -- by:   Mr. Giff
-// -- ver:  1.4.1 -- Fixed small typo (removed defunct static call)
-// -- lic:  MIT
+/// @desc A lightweight, self-contained GML script for creating smooth animations.
+/// @ver  2.0.0 (Fluent Interface, Expanded API, Struct Tweening, Refined Style/Syntax & JSDOC, Optimized Performance.)
+/// @lic  MIT
 
-// --- Take time in Seconds if true (e.g 0.9) vs Frames (e.g 120)
-#macro CASSETTE_USE_DELTA_TIME false
-
-// --- Whether animations should start playing or be started manually with the '.play' method
-#macro CASSETTE_AUTO_START false 
-
-// --- Playback speed (Internal use, don't touch this. Use the '.set_speed' method)
+// --- Playback Constants ---
 #macro CASSETTE_DEFAULT_PLAYBACK_SPEED 1.0
 
-// "Fast Math"
 // --- Bounce Constants ---
 #macro CASSETTE_BOUNCE_N1 7.5625
 #macro CASSETTE_BOUNCE_D1 2.75
@@ -44,931 +35,984 @@
 /// @enum CASSETTE_ANIM
 /// @desc Defines the playback behavior for a transition.
 enum CASSETTE_ANIM {
-    Once,     // Plays the animation one time from start to finish (default).
-    Loop,     // Restarts the animation from the beginning after it finishes.
-    PingPong  // Reverses the animation direction when it reaches the end.
+    ONCE,
+    LOOP, 
+    PING_PONG
 }
 
-/// @function Cassette()
-/// @description A centralized, self-contained class for chained, sequenced animations with advanced playback
-function Cassette() constructor{
+/// @function Cassette([useDeltaTime], [autoStart], [defaultLerp])
+/// @description A centralized, self-contained class for chained, sequenced animations.
+function Cassette(_useDeltaTime = false, _autoStart = false, _defaultLerp = lerp) constructor {
     
-    active_transitions = {};
+    // Private internal state
+    __activeTransitions = {};
+    __useDeltaTime = _useDeltaTime;
+    __defaultAutoStart = _autoStart;
+    __defaultLerp = _defaultLerp;
 
     // --- Private Chain Builder ---
-    // This is returned by 'transition()' to allow for method chaining.
-    function ChainBuilder(_manager_ref) constructor {
-        manager = _manager_ref;
-        queue = _manager_ref.queue;
-        
-        /// @function add(from, to, duration, ease_func, [anim_state], [loop_for], [callback])
-        /// @desc Adds a new transition to the sequence.
-        add = function(_from, _to, _duration, ease_func, _anim_state = CASSETTE_ANIM.Once, _loop_for = -1, _callback = undefined) {
-            var _next_definition = {
-                from_val: _from, to_val: _to, duration: _duration, CASSETTE_func: ease_func,
-                anim_state: _anim_state, loops_left: _loop_for,
-                on_track_end: _callback
-            };
-            array_push(queue, _next_definition);
-            return self;
-        } 
-        
-        /// @function wait(duration, [on_track_end])
-        /// @desc Adds a pause to the sequence for a given duration.
-        /// @param {real} _duration The time to wait (in frames or seconds, matching CASSETTE_USE_DELTA_TIME).
-        /// @param {Function} [_callback] Optional callback to run when this wait finishes.
-        wait = function(_duration, _callback = undefined) {
-            var _wait_definition = {
-                is_wait: true,
-                duration: _duration,
-                anim_state: CASSETTE_ANIM.Once,
-                loops_left: 1,
-                on_track_end: _callback
-            };
-            array_push(queue, _wait_definition);
-            return self;
-        }
+    // This is the fluent interface object returned by .transition()
+    __ChainBuilder = function(_managerRef) constructor {
+        __manager = _managerRef;
+        __queue = _managerRef.__queue;
 
-        /// @function on_end(callback_func)
-        /// @desc Sets a callback function to run when the entire sequence is complete.
-        /// @param {Function} _func The function to call.
-        on_end = function(_func) {
-            manager.on_sequence_end = _func;
+        /// @function next([label])
+        /// @desc Adds a new segment to the CURRENT sequence.
+        ///       Inherits 'from' value from previous track to ensure continuity.
+        next = function(_label = undefined) {
+            
+            // Auto-detect start value from previous track to prevent jumping
+            var _autoVal = 0;
+            var _i = array_length(__queue) - 1;
+            
+            while (_i >= 0) {
+                var _prev = __queue[_i];
+                if (!variable_struct_exists(_prev, "__isWait") || !_prev.__isWait) {
+                    _autoVal = _prev.__toVal;
+                    break;
+                }
+                _i--;
+            }
+
+            var _def = {
+                label: _label, 
+                __fromVal: _autoVal, 
+                __toVal: _autoVal,   
+                duration: 1.0,
+                __easingFunc: Cassette.InQuad, 
+                __isCurve: false, 
+                __animState: CASSETTE_ANIM.ONCE,
+                __loopsRemaining: -1,
+                __onUpdate: undefined,
+                __onTrackEnd: undefined,
+                __isWait: false
+            };
+            array_push(__queue, _def);
+            return self; 
+        };
+        
+        /// @func wait(duration, [callback])
+        /// @desc Adds a pause to the sequence.
+        /// @param {Real} duration The duration to wait (in frames or seconds).
+        /// @param {Function} [callback] Optional callback to fire when the wait ends.
+        /// @return {Struct} The ChainBuilder instance for chaining.
+        wait = function(_duration, _callback = undefined) {
+            var _def = {
+                __isWait: true,
+                duration: _duration,
+                __animState: CASSETTE_ANIM.ONCE,
+                __loopsRemaining: 1,
+                __onTrackEnd: _callback,
+                __onUpdate: undefined 
+            };
+            array_push(__queue, _def);
             return self;
-        }
-    }
+        };
+
+        // --- Setters ---
+
+        /// @function from(valueOrStruct)
+        /// @desc Sets the start value. Can be a Real or a Struct.
+        from = function(_val) {
+            var _last = array_last(__queue);
+            if (_last.__isWait) show_error("Cassette: Cannot set 'from' on a wait() command.", true);
+            
+            _last.__fromVal = _val;
+            
+            // If this is the very first track, we must update the manager's current value immediately
+            // so it has a valid starting point before the first update cycle.
+            if (array_length(__queue) == 1) {
+                __manager.__currentVal = _val;
+            }
+            return self;
+        };
+
+        /// @function to(valueOrStruct)
+        /// @desc Sets the end value.
+        to = function(_val) {
+            var _last = array_last(__queue);
+            if (_last.__isWait) show_error("Cassette: Cannot set 'to' on a wait() command.", true);
+            _last.__toVal = _val;
+            return self;
+        };
+
+        /// @function duration(secondsOrFrames)
+        duration = function(_val) {
+            var _last = array_last(__queue);
+            _last.duration = _val;
+            return self;
+        };
+
+        /// @function ease(functionOrCurve)
+        /// @desc Sets the easing function or Animation Curve struct.
+        ease = function(_func) {
+            var _last = array_last(__queue);
+            if (_last.__isWait) show_error("Cassette: Cannot set 'ease' on a wait() command.", true);
+
+            _last.__easingFunc = _func;
+            if (is_struct(_func) && variable_struct_exists(_func, "__isAnimCurve")) {
+                _last.__isCurve = true;
+            } else {
+                _last.__isCurve = false;
+            }
+            return self;
+        };
+
+        /// @function loop([times])
+        /// @desc Repeats THIS track. -1 = Infinite.
+        loop = function(_times = -1) {
+            var _last = array_last(__queue);
+            if (_last.__isWait) show_error("Cassette: Cannot set 'loop' on a wait() command.", true);
+            
+            _last.__animState = CASSETTE_ANIM.LOOP;
+            // Convert "Repeats" to "Total Plays" (e.g., repeat 1 time = play 2 times)
+            if (_times != -1) _times += 1;
+            _last.__loopsRemaining = _times;
+
+            if (array_length(__queue) == 1) __manager.__loopsRemaining = _times;
+
+            return self;
+        };
+
+        /// @function pingpong([times])
+        /// @desc PingPongs THIS track. -1 = Infinite.
+        pingpong = function(_times = -1) {
+            var _last = array_last(__queue);
+            if (_last.__isWait) show_error("Cassette: Cannot set 'pingpong' on a wait() command.", true);
+            
+            _last.__animState = CASSETTE_ANIM.PING_PONG;
+            _last.__loopsRemaining = _times;
+            if (array_length(__queue) == 1) __manager.__loopsRemaining = _times;
+            
+            return self;
+        };
+
+        // --- Callbacks ---
+
+        /// @func onPlay(callback)
+        /// @desc Triggered when .play() is called.
+        /// @param {Function} callback
+        /// @return {Struct}
+        onPlay = function(_func) {
+            __manager.__onPlayCb = _func;
+            return self;
+        };
+
+        /// @func onPause(callback)
+        /// @desc Triggered when .pause() is called.
+        /// @param {Function} callback
+        /// @return {Struct}
+        onPause = function(_func) {
+            __manager.__onPauseCb = _func;
+            return self;
+        };
+
+        /// @func onStop(callback)
+        /// @desc Triggered when .stop() is called.
+        /// @param {Function} callback
+        /// @return {Struct}
+        onStop = function(_func) {
+            __manager.__onStopCb = _func;
+            return self;
+        };
+
+        /// @func onRewind(callback)
+        /// @desc Triggered when .rewind() is called.
+        /// @param {Function} callback
+        /// @return {Struct}
+        onRewind = function(_func) {
+            __manager.__onRewindCb = _func;
+            return self;
+        };
+
+        /// @func onFfwd(callback)
+        /// @desc Triggered when .ffwd() is called.
+        /// @param {Function} callback
+        /// @return {Struct}
+        onFfwd = function(_func) {
+            __manager.__onFfwdCb = _func;
+            return self;
+        };
+
+        /// @func onSeek(callback)
+        /// @desc Triggered when .seek() is called.
+        /// @param {Function} callback
+        /// @return {Struct}
+        onSeek = function(_func) {
+            __manager.__onSeekCb = _func;
+            return self;
+        };
+
+        /// @func onSkip(callback)
+        /// @desc Triggered when .skip() is called.
+        /// @param {Function} callback
+        /// @return {Struct}
+        onSkip = function(_func) {
+            __manager.__onSkipCb = _func;
+            return self;
+        };
+
+        /// @func onBack(callback)
+        /// @desc Triggered when .back() is called.
+        /// @param {Function} callback
+        /// @return {Struct}
+        onBack = function(_func) {
+            __manager.__onBackCb = _func;
+            return self;
+        };
+
+        /// @func onUpdate(callback)
+        /// @desc Callback that runs every frame while this specific track is active.
+        /// @param {Function} callback Receives the current value as an argument.
+        /// @return {Struct}
+        onUpdate = function(_func) {
+            var _last = array_last(__queue);
+            _last.__onUpdate = _func;
+            return self;
+        };
+        
+        /// @func onEnd(callback)
+        /// @desc Callback for when THIS specific track ends.
+        /// @param {Function} callback
+        /// @return {Struct}
+        onEnd = function(_func) {
+            var _last = array_last(__queue);
+            _last.__onTrackEnd = _func;
+            return self;
+        };
+
+        /// @func onSequenceEnd(callback)
+        /// @desc Callback for when the ENTIRE chain finishes.
+        /// @param {Function} callback
+        /// @return {Struct}
+        onSequenceEnd = function(_func) {
+            __manager.__onSequenceEnd = _func;
+            return self;
+        };
+    };
     
     // --- Public Methods ---
     
-    /// @function transition(key, from, to, duration, func, [anim_state], [loop_for], [custom_lerp_func])
-    /// @description Starts a new transition sequence and returns a chainable object.
-    transition = function(_key, _from, _to, _duration, _func, _anim_state = CASSETTE_ANIM.Once, _loop_for = -1, _callback = undefined, _lerp_func = lerp) {
-        // This is the definition for the first transition in the sequence.
-        var _first_definition = {
-            from_val: _from, to_val: _to, duration: _duration, CASSETTE_func: _func,
-            anim_state: _anim_state, loops_left: _loop_for,
-            on_track_end: _callback
+    /// @func transition(key, [lerp_func])
+    /// @desc Creates a new transition chain.
+    /// @param {String} key Unique identifier for this transition.
+    /// @param {Function} [lerp_func] Optional custom lerp function.
+    /// @return {Struct} A ChainBuilder instance to configure the animation.
+    transition = function(_key, _lerpFunc = __defaultLerp) {
+        var _firstDef = {
+            label: "Start",
+            __fromVal: 0, __toVal: 0, duration: 1.0, 
+            __easingFunc: Cassette.InQuad, 
+            __isCurve: false, 
+            __animState: CASSETTE_ANIM.ONCE, __loopsRemaining: -1,
+            __onTrackEnd: undefined,
+            __onUpdate: undefined,
+            __isWait: false
         };
-        
-        // The manager holds the queue and the live state of the currently running animation.
+
         var _manager = { 
-            queue: [_first_definition],
-            current_index: 0,
-            lerp_func: _lerp_func,
-            on_sequence_end: undefined,
+            __queue: [_firstDef],
+            __currentIndex: 0,
+            __lerpFunc: _lerpFunc, 
+            __onSequenceEnd: undefined,
             
+            // Control Callbacks
+            __onPlayCb: undefined,
+            __onPauseCb: undefined,
+            __onStopCb: undefined,
+            __onRewindCb: undefined,
+            __onFfwdCb: undefined,
+            __onSeekCb: undefined,
+            __onSkipCb: undefined,
+            __onBackCb: undefined,
+
             // State
-            current_val: _from,
-            timer: 0,
-      
-            direction: 1,
-            loops_left: (_anim_state == CASSETTE_ANIM.Once) ? 1 : _loop_for,
-            is_paused: !CASSETTE_AUTO_START,
-            playback_speed: CASSETTE_DEFAULT_PLAYBACK_SPEED, 
+            __currentVal: 0,
+            __timer: 0,
+            __direction: 1,
+            __loopsRemaining: 1,
+            __isPaused: !__defaultAutoStart,
+            __playbackSpeed: CASSETTE_DEFAULT_PLAYBACK_SPEED,
+            __isFinished: false 
         };
         
-        active_transitions[$ _key] = _manager;
-        
-        // Return a new builder that operates on the manager.
-        return new ChainBuilder(_manager); 
-    }
+        __activeTransitions[$ _key] = _manager;
+        return new __ChainBuilder(_manager); 
+    };
     
     /// @function update()
-    /// @description Updates all active transitions.
+    /// @description Updates all active transitions. Call in Step Event.
     update = function() {
-        var _completed_keys = [];
+        var _completedKeys = [];
+        var _keys = variable_struct_get_names(__activeTransitions);
+        var _len = array_length(_keys);
         
-        var _keys = variable_struct_get_names(active_transitions);
-        for (var i = 0; i < array_length(_keys); i++) {
-            var _key = _keys[i];
+        var _i = 0; repeat(_len) {
+            var _key = _keys[_i];
+            _i++;
             
-            if (!variable_struct_exists(active_transitions, _key)) {
-                continue;
-            }
+            var _manager = __activeTransitions[$ _key];
+            if (_manager.__isPaused) continue; 
             
-            var _manager = active_transitions[$ _key];
-        
-            if (_manager.is_paused) {
-                continue; 
-            }
+            var _currentDef = _manager.__queue[_manager.__currentIndex];
             
-            var _current_def = _manager.queue[_manager.current_index];
+            // Handle Time
+            var _dtMultiplier = (__useDeltaTime) ? (delta_time / 1000000) : 1;
+            var _timeStep = _dtMultiplier * abs(_manager.__playbackSpeed);
             
-            // --- 1. Handle time ---
-            var _playback_speed = _manager.playback_speed;
-            var _effective_direction = sign(_playback_speed) * _manager.direction; 
-            
-            var _time_step = 0;
-            if (CASSETTE_USE_DELTA_TIME) { 
-                _time_step = (delta_time / 1000000) * abs(_playback_speed); 
-            } else { 
-                _time_step = 1 * abs(_playback_speed); 
-            }
-            
-            _manager.timer += _time_step * _effective_direction;
+            _manager.__timer += _timeStep * (sign(_manager.__playbackSpeed) * _manager.__direction);
 
-            // --- 2. Handle wait ---
-            if (variable_struct_exists(_current_def, "is_wait")) {
-                if (_manager.timer >= _current_def.duration) {
-                    var _overflow = _manager.timer - _current_def.duration;
-                    _manager.direction = 1; 
-                    _move_to_next_track(_manager, _key, _completed_keys, _overflow);
+            // Handle Wait Nodes
+            if (_currentDef.__isWait) {
+                if (_manager.__timer >= _currentDef.duration) {
+                    var _overflow = _manager.__timer - _currentDef.duration;
+                    _manager.__direction = 1; 
+                    __moveToNextTrack(_manager, _key, _completedKeys, _overflow);
                 }
-                else if (_manager.timer < 0) {
-                    var _underflow = _manager.timer;
-                    _manager.direction = 1; 
-                    _handle_backward_completion(_manager, _key, _underflow);
+                else if (_manager.__timer < 0) {
+                    var _underflow = _manager.__timer;
+                    _manager.__direction = 1; 
+                    __handleBackwardCompletion(_manager, _key, _underflow);
                 }
                 continue;
             }
 
-            // --- 3. Animation Logic ---
-            var _raw_progress = 0;
-            if (_current_def.duration <= 0) {
-                _raw_progress = 1;
-            } else {
-                _raw_progress = clamp(_manager.timer / _current_def.duration, 0, 1);
-            }
-            
-            var _eased_progress = 0;
-            var _lerper = _manager.lerp_func;
-            var _CASSETTE_source = _current_def.CASSETTE_func;
-            
-            if (is_struct(_CASSETTE_source) && variable_struct_exists(_CASSETTE_source, "__is_anim_curve")) {
-                _eased_progress = animcurve_channel_evaluate(_CASSETTE_source.channel, _raw_progress);
-            } else {
-                _eased_progress = _CASSETTE_source(_raw_progress);
-            }
+            // Handle Animation Logic
+            __evaluateAndSetValue(_manager);
 
-            _manager.current_val = _lerper(_current_def.from_val, _current_def.to_val, _eased_progress);
+            // Handle Boundaries (Completion/Looping)
+            var _isLooping = _currentDef.__animState == CASSETTE_ANIM.LOOP;
+            var _isPingPong = _currentDef.__animState == CASSETTE_ANIM.PING_PONG;
             
-            // --- 4. Handle Completion (Boundaries) ---
-            var _is_looping = _current_def.anim_state == CASSETTE_ANIM.Loop;
-            var _is_pingpong = _current_def.anim_state == CASSETTE_ANIM.PingPong;
-            var _is_once = _current_def.anim_state == CASSETTE_ANIM.Once;
-            
-            // --- FORWARD BOUNDARY (timer >= duration) ---
-            if (_manager.timer >= _current_def.duration) {
-                var _overflow = _manager.timer - _current_def.duration;
-
-                if (_is_looping) {
-                    if (_manager.loops_left > 0) _manager.loops_left--;
-                    if (_manager.loops_left != 0) {
-                        _manager.timer = _overflow; 
+            // FORWARD BOUNDARY
+            if (_manager.__timer >= _currentDef.duration) {
+                var _overflow = _manager.__timer - _currentDef.duration;
+                if (_isLooping) {
+                    if (_manager.__loopsRemaining > 0) _manager.__loopsRemaining--;
+                    if (_manager.__loopsRemaining != 0) {
+                        _manager.__timer = _overflow;
                     } else {
-                        _move_to_next_track(_manager, _key, _completed_keys, _overflow);
+                        __moveToNextTrack(_manager, _key, _completedKeys, _overflow);
                     }
                 }
-                else if (_is_pingpong) {
-                    if (_manager.loops_left != 0) {
-                        _manager.timer = _current_def.duration - _overflow; 
-                        _manager.direction *= -1; 
+                else if (_isPingPong) {
+                    if (_manager.__loopsRemaining != 0) {
+                        _manager.__timer = _currentDef.duration - _overflow;
+                        _manager.__direction *= -1; 
                     } else {
-                        _move_to_next_track(_manager, _key, _completed_keys, _overflow);
+                        __moveToNextTrack(_manager, _key, _completedKeys, _overflow);
                     }
                 }
-                else { // _is_once
-                    _move_to_next_track(_manager, _key, _completed_keys, _overflow);
+                else { // Once
+                    __moveToNextTrack(_manager, _key, _completedKeys, _overflow);
                 }
             }
-            // --- BACKWARD BOUNDARY (timer <= 0) ---
-            else if (_manager.timer < 0) {
-                var _underflow = _manager.timer;
-                
-                if (_is_looping) {
-                    if (_manager.loops_left != 0) {
-                        _manager.timer = _current_def.duration + _underflow;
+            // BACKWARD BOUNDARY
+            else if (_manager.__timer < 0) {
+                var _underflow = _manager.__timer;
+                if (_isLooping) {
+                    if (_manager.__loopsRemaining != 0) {
+                        _manager.__timer = _currentDef.duration + _underflow;
                     } else {
-                        _handle_backward_completion(_manager, _key, _underflow);
+                        __handleBackwardCompletion(_manager, _key, _underflow);
                     }
                 }
-                else if (_is_pingpong) {
-                    if (_manager.loops_left > 0) _manager.loops_left--;
-                    
-                    if (_manager.loops_left != 0) {
-                        _manager.timer = 0 - _underflow; 
-                        _manager.direction *= -1; 
+                else if (_isPingPong) {
+                    if (_manager.__loopsRemaining > 0) _manager.__loopsRemaining--;
+                    if (_manager.__loopsRemaining != 0) {
+                        _manager.__timer = 0 - _underflow;
+                        _manager.__direction *= -1; 
                     } else { 
-                        _move_to_next_track(_manager, _key, _completed_keys, 0 - _underflow);
+                        __moveToNextTrack(_manager, _key, _completedKeys, 0 - _underflow);
                     }
                 }
-                else { // _is_once
-                     _handle_backward_completion(_manager, _key, _underflow);
+                else { // Once
+                     __handleBackwardCompletion(_manager, _key, _underflow);
                 }
             }
         }
         
-        for (var i = 0; i < array_length(_completed_keys); i++) {
-            variable_struct_remove(active_transitions, _completed_keys[i]);
+        // Clean up completed transitions
+        var _c = 0;
+        var _cLen = array_length(_completedKeys);
+        repeat(_cLen) {
+            variable_struct_remove(__activeTransitions, _completedKeys[_c]);
+            _c++;
         }
-    }
+    };
 
     // --- Player Controls ---
 
     /// @function play([keys])
-    /// @desc Resumes one or all active transitions.
-    /// @param {String|Array<String>} [keys] Optional: A key or array of keys. Affects all if omitted.
     play = function(_keys = undefined) {
-        _apply_to_managers(_keys, function(_manager, _data, _key) {
-            _manager.is_paused = false;
+        __applyToManagers(_keys, function(_manager) { 
+            if (is_method(_manager.__onPlayCb)) _manager.__onPlayCb();
+            _manager.__isPaused = false; 
         });
-    }
+    };
 
     /// @function pause([keys])
-    /// @desc Pauses one or all active transitions.
-    /// @param {String|Array<String>} [keys] Optional: A key or array of keys. Affects all if omitted.
     pause = function(_keys = undefined) {
-        _apply_to_managers(_keys, function(_manager, _data, _key) {
-            _manager.is_paused = true;
+        __applyToManagers(_keys, function(_manager) { 
+            if (is_method(_manager.__onPauseCb)) _manager.__onPauseCb();
+            _manager.__isPaused = true; 
         });
-    }
+    };
 
-    /// @function stop(key)
-    /// @description Immediately stops and removes a specific transition sequence.
-    /// @param {string} key The unique name of the transition sequence to stop.
-    /// @returns {bool} Returns true if a transition was found and stopped, otherwise false.
-    stop = function(_key, _trigger_end_callback = true) {
-        if (variable_struct_exists(active_transitions, _key)) {
-            var _manager = active_transitions[$ _key];
+    /// @function stop([keys], [triggerCallback])
+    stop = function(_keys = undefined, _triggerEndCallback = true) {
+        __applyToManagers(_keys, function(_manager, _doCallback, _key) {
+            if (is_method(_manager.__onStopCb)) _manager.__onStopCb();
 
-            // Callback
-            if (_trigger_end_callback && is_method(_manager.on_sequence_end)) {
-                _manager.on_sequence_end();
+            if (_doCallback && is_method(_manager.__onSequenceEnd)) {
+                _manager.__onSequenceEnd();
             }
-            
-            variable_struct_remove(active_transitions, _key);
-            return true;
-        }
-        return false;
-    }
+            variable_struct_remove(__activeTransitions, _key);
+        }, _triggerEndCallback);
+    };
 
     /// @function ffwd([keys])
-    /// @desc Jumps to the very end of one or all transitions (last track, last frame).
-    /// @param {String|Array<String>} [keys] Optional: A key or array of keys. Affects all if omitted.
     ffwd = function(_keys = undefined) {
-        _apply_to_managers(_keys, function(_manager, _data, _key) {
-            _manager.current_index = array_length(_manager.queue) - 1;
-            var _last_def = _manager.queue[_manager.current_index];
+        __applyToManagers(_keys, function(_manager, _data, _key) {
+            if (is_method(_manager.__onFfwdCb)) _manager.__onFfwdCb();
+
+            _manager.__currentIndex = array_length(_manager.__queue) - 1;
+            var _lastDef = _manager.__queue[_manager.__currentIndex];
             
-            _manager.timer = _last_def.duration;
-            _manager.direction = 1;
-            _manager.loops_left = 0;
+            _manager.__timer = _lastDef.duration;
+            _manager.__direction = 1;
+            _manager.__loopsRemaining = 0;
             
-            if (!variable_struct_exists(_last_def, "is_wait")) {
-                _manager.current_val = _last_def.to_val;
-            }
+            if (!_lastDef.__isWait) _manager.__currentVal = _lastDef.__toVal;
             
-            // Callback
-            if (is_method(_manager.on_sequence_end)) {
-                _manager.on_sequence_end();
-            }
-            stop(_key, false); 
+            if (is_method(_manager.__onSequenceEnd)) _manager.__onSequenceEnd();
+            variable_struct_remove(__activeTransitions, _key);
         });
-    }
+    };
 
     /// @function rewind([keys])
-    /// @desc Reset one or all transitions to their very beginning (first track).
-    /// @param {String|Array<String>} [keys] Optional: A key or array of keys. Affects all if omitted.
     rewind = function(_keys = undefined) {
-        _apply_to_managers(_keys, function(_manager, _data, _key) {
-            _init_track(_manager, 0); 
-    
-            if (!CASSETTE_AUTO_START) {
-                _manager.is_paused = true;
-            }
+        __applyToManagers(_keys, function(_manager) {
+            if (is_method(_manager.__onRewindCb)) _manager.__onRewindCb();
+            
+            __initTrack(_manager, 0); 
+            if (!__defaultAutoStart) _manager.__isPaused = true;
         });
-    }
+    };
 
      /// @function seek(amount, [keys])
-    /// @desc Seeks forward/backward by a duration (in frames/seconds).
-    /// @param {Real} amount The duration to seek (can be negative).
-    /// @param {String|Array<String>} [keys] Optional: A key or array of keys. Affects all if omitted.
     seek = function(_amount, _keys = undefined) {
-        _apply_to_managers(_keys, _seek_manager, _amount);
-    }
+        // Wrap __seekManager to inject the callback trigger
+        __applyToManagers(_keys, function(_manager, _amt, _k) {
+            if (is_method(_manager.__onSeekCb)) _manager.__onSeekCb();
+            other.__seekManager(_manager, _amt, _k);
+        }, _amount);
+    };
 
     /// @function skip([keys])
     skip = function(_keys = undefined) {
-        _apply_to_managers(_keys, function(_manager, _data, _key) {
-            if (_manager.current_index + 1 < array_length(_manager.queue)) {
-                _init_track(_manager, _manager.current_index + 1);
-            } else {
-                // At the end. Set final state, call callback, and stop.
-                var _last_index = array_length(_manager.queue) - 1;
-                var _last_def = _manager.queue[_last_index];
-                _init_track(_manager, _last_index, _last_def.duration); 
+        __applyToManagers(_keys, function(_manager, _data, _key) {
+            if (is_method(_manager.__onSkipCb)) _manager.__onSkipCb();
 
-                if (is_method(_manager.on_sequence_end)) {
-                    _manager.on_sequence_end();
-                }
-                
-                stop(_key, false); 
+            if (_manager.__currentIndex + 1 < array_length(_manager.__queue)) {
+                __initTrack(_manager, _manager.__currentIndex + 1);
+            } else {
+                var _lastIndex = array_length(_manager.__queue) - 1;
+                var _lastDef = _manager.__queue[_lastIndex];
+                __initTrack(_manager, _lastIndex, _lastDef.duration); 
+                if (is_method(_manager.__onSequenceEnd)) _manager.__onSequenceEnd();
+                variable_struct_remove(__activeTransitions, _key);
             }
         });
-    }
+    };
 
     /// @function back([keys])
     back = function(_keys = undefined) {
-        _apply_to_managers(_keys, function(_manager, _data, _key) {
-            if (_manager.current_index > 0) {
-                _init_track(_manager, _manager.current_index - 1);
-            } else {
-                _init_track(_manager, 0);
-            }
+        __applyToManagers(_keys, function(_manager) {
+            if (is_method(_manager.__onBackCb)) _manager.__onBackCb();
+
+            if (_manager.__currentIndex > 0) __initTrack(_manager, _manager.__currentIndex - 1);
+            else __initTrack(_manager, 0);
         });
-    }
-	
-	/// @function get_speed(key)
-    /// @description Returns the playback speed of a specific transition.
-    /// @param {String} _key The unique name of the transition sequence.
-    /// @returns {Real|Undefined} Returns the speed (e.g., 1.0) if the transition exists, or undefined if it does not.
-    get_speed = function(_key) {
-        if (variable_struct_exists(active_transitions, _key)) {
-            return active_transitions[$ _key].playback_speed;
-        }
-        return undefined;
-    }
-	
-    /// @function set_speed(speed, [keys])
-    /// @desc Sets playback speed for one or all transitions (1 = normal, 2 = 2x, -1 = reverse).
-    /// @param {Real} speed The new playback speed multiplier.
-    /// @param {String|Array<String>} [keys] Optional: A key or array of keys. Affects all if omitted.
-    set_speed = function(_speed, _keys = undefined) {
-        _apply_to_managers(_keys, function(_manager, _speed_data, _key) { 
-            _manager.playback_speed = _speed_data; 
-        }, _speed);
-    }
-
-    /// @function clear_all()
-    /// @description Immediately stops and removes all active transition sequences.
-    clear_all = function() {
-        active_transitions = {};
-    }
-
-    /// @function get_value(key, default_val)
-	/// @param {String} _key The unique name of the transition sequence.
-	/// @param {Real} _default_val The default value to fallback to.
-    /// @description Returns the current value of a named transition sequence.
-    get_value = function(_key, _default_val) {
-        if (variable_struct_exists(active_transitions, _key)) {
-            return active_transitions[$ _key].current_val;
-        }
-        return _default_val;
-    }
+    };
     
-    /// @function is_active(key)
-	/// @param {String} _key The unique name of the transition sequence.
-    /// @description Returns true if a specific transition sequence is in process (if it exists, not the same as paused).
-    is_active = function(_key) {
-        return variable_struct_exists(active_transitions, _key);
-    }
-	
-	/// @function is_paused(key)
-    /// @description Returns true if a specific transition sequence is currently paused.
-    /// @param {String} _key The unique name of the transition sequence.
-    /// @returns {Bool|Undefined} Returns true/false if the transition exists, or undefined if it does not.
-    is_paused = function(_key) {
-        if (variable_struct_exists(active_transitions, _key)) {
-            return active_transitions[$ _key].is_paused;
+    /// @function getSpeed(key)
+    getSpeed = function(_key) {
+        if (variable_struct_exists(__activeTransitions, _key)) {
+            return __activeTransitions[$ _key].__playbackSpeed;
         }
         return undefined;
-    }
+    };
+    
+    /// @function setSpeed(speed, [keys])
+    setSpeed = function(_speed, _keys = undefined) {
+        __applyToManagers(_keys, function(_manager, _speed) { _manager.__playbackSpeed = _speed; }, _speed);
+    };
 
-	/// @function custom(curve_asset_or_struct, [channel_index])
-    /// @description Prepares a GameMaker Animation Curve asset for use in a transition.
-    /// @param {Asset.GMAnimCurve|Struct} curve_asset_or_struct The Animation Curve asset (e.g. ac_MyCurve) or a pre-fetched struct from animcurve_get().
-    /// @param {real} [channel_index] The channel index within the curve to use.
-    /// @returns {Struct|undefined} A special struct for the update method to recognize, or undefined on failure.
-    custom = function(_curve_asset_or_struct, _channel_index = 0) {
-        var _curve_struct = _curve_asset_or_struct;
-        
-        // If not a struct, assume it's an asset ID and try to get the struct
-        if (!is_struct(_curve_struct)) {
-            _curve_struct = animcurve_get(_curve_asset_or_struct);
+    /// @function clearAll()
+    clearAll = function() {
+        __activeTransitions = {};
+    };
+
+    /// @function getValue(key, defaultVal)
+    getValue = function(_key, _defaultVal) {
+        if (variable_struct_exists(__activeTransitions, _key)) {
+            return __activeTransitions[$ _key].__currentVal;
+        }
+        return _defaultVal;
+    };
+    
+    /// @function isActive([key])
+    isActive = function(_key = undefined) {
+        if (_key != undefined) {
+            return variable_struct_exists(__activeTransitions, _key);
+        }
+        var _names = variable_struct_get_names(__activeTransitions);
+        return (array_length(_names) > 0);
+    };
+    
+    /// @function isPaused([key])
+    isPaused = function(_key = undefined) {
+        if (_key != undefined) {
+            if (variable_struct_exists(__activeTransitions, _key)) {
+                return __activeTransitions[$ _key].__isPaused;
+            }
+            return undefined;
         }
         
-        // Validate the curve and channel
-        if (!is_struct(_curve_struct) || !variable_struct_exists(_curve_struct, "channels")) return undefined;
-        if (_channel_index >= array_length(_curve_struct.channels)) return undefined;
+        var _keys = variable_struct_get_names(__activeTransitions);
+        if (array_length(_keys) == 0) return false; 
         
-        var _channel = _curve_struct.channels[_channel_index];
+        var _i = 0;
+        var _len = array_length(_keys);
+        repeat(_len) {
+            var _manager = __activeTransitions[$ _keys[_i]];
+            if (!_manager.__isPaused) return false; 
+            _i++;
+        }
+        return true;
+    };
+
+    /// @function custom(curveAssetOrStruct, [channelIndex])
+    custom = function(_curveAssetOrStruct, _channelIndex = 0) {
+        var _curveStruct = _curveAssetOrStruct;
+        if (!is_struct(_curveStruct)) _curveStruct = animcurve_get(_curveAssetOrStruct);
+        
+        if (!is_struct(_curveStruct) || !variable_struct_exists(_curveStruct, "channels")) return undefined;
+        if (_channelIndex >= array_length(_curveStruct.channels)) return undefined;
         
         return {
-            __is_anim_curve: true,
-            channel: _channel
+            __isAnimCurve: true,
+            channel: _curveStruct.channels[_channelIndex]
         };
-    }
+    };
 
-    // --- Private Helpers ---
+    // --- Internal Helpers (Private) ---
 
-    /// @desc (Internal) Sets a manager's state to a specific track index and timer.
-    /// @param {Struct} _manager The animation manager.
-    /// @param {Real} _index The index in the queue to set.
-    /// @param {Real} [_timer] The new timer value (e.g., overflow or underflow).
-    /// @param {Real} [_start_dir] 1 = start at beginning, -1 = start at end.
-    _init_track = function(_manager, _index, _timer = 0, _start_dir = 1) {
-        _manager.current_index = _index;
-        var _def = _manager.queue[_index];
-        
-        _manager.loops_left = (_def.anim_state == CASSETTE_ANIM.Once) ? 1 : _def.loops_left;
-        
-        if (_def.anim_state == CASSETTE_ANIM.PingPong && _start_dir == -1) {
-            _manager.direction = -1;
-            _manager.timer = _def.duration + _timer; 
-        } else {
-            _manager.direction = 1; 
-            _manager.timer = _timer;
-        }
-
-        _evaluate_and_set_value(_manager);
-    }
-
-    /// @desc (Internal) Advances a manager to its next track or marks it for completion.
-    _move_to_next_track = function(_manager, _key_for_completion, _completed_keys_ref, _overflow = 0) {
-        
-        // track_end
-        var _current_def = _manager.queue[_manager.current_index];
-        if (is_method(_current_def.on_track_end)) {
-            _current_def.on_track_end();
-        }
-
-        // Move to next track or end sequence
-        if (_manager.current_index + 1 < array_length(_manager.queue)) {
-            _init_track(_manager, _manager.current_index + 1, _overflow, 1);
-        } 
-        else {
-            // sequence_end 
-            if (is_method(_manager.on_sequence_end)) {
-                _manager.on_sequence_end();
+    /// @desc (Internal) Interpolates Reals or Structs.
+    __calculateCurrentValue = function(_from, _to, _progress, _lerpFunc) {
+        if (is_struct(_from)) {
+            var _result = {};
+            var _keys = variable_struct_get_names(_to);
+            var _len = array_length(_keys);
+            var _i = 0; repeat(_len) {
+                var _k = _keys[_i];
+                _result[$ _k] = _lerpFunc(_from[$ _k], _to[$ _k], _progress);
+                _i++;
             }
-            
-            array_push(_completed_keys_ref, _key_for_completion);
+            return _result;
+        } else {
+            return _lerpFunc(_from, _to, _progress);
         }
     };
 
-    /// @desc (Internal) Moves a manager to the end of its previous track.
-    _handle_backward_completion = function(_manager, _key_for_completion, _underflow) {
-        if (_manager.current_index > 0) {
-            var _prev_index = _manager.current_index - 1;
-            _init_track(_manager, _prev_index, _underflow, -1);
-        } 
-        else {
-            _manager.timer = 0;
-            _manager.direction = 1;
+    /// @desc (Internal) Calculates and sets the current value based on time/queue.
+    __evaluateAndSetValue = function(_manager) {
+        var _def = _manager.__queue[_manager.__currentIndex];
+        if (_def.__isWait) return;
+        
+        var _progress = (_def.duration <= 0) ? 1 : clamp(_manager.__timer / _def.duration, 0, 1);
+        var _eased = 0;
+        
+        if (_def.__isCurve) _eased = animcurve_channel_evaluate(_def.__easingFunc.channel, _progress);
+        else _eased = _def.__easingFunc(_progress);
+
+        _manager.__currentVal = __calculateCurrentValue(_def.__fromVal, _def.__toVal, _eased, _manager.__lerpFunc);
+        
+        if (is_method(_def.__onUpdate)) _def.__onUpdate(_manager.__currentVal);
+    };
+
+    /// @desc (Internal) Sets a manager's state to a specific track index.
+    __initTrack = function(_manager, _index, _timer = 0, _startDir = 1) {
+        _manager.__isFinished = false;
+        _manager.__currentIndex = _index;
+        var _def = _manager.__queue[_index];
+        
+        _manager.__loopsRemaining = (_def.__animState == CASSETTE_ANIM.ONCE) ? 1 : _def.__loopsRemaining;
+        if (_def.__animState == CASSETTE_ANIM.PING_PONG && _startDir == -1) {
+            _manager.__direction = -1;
+            _manager.__timer = _def.duration + _timer; 
+        } else {
+            _manager.__direction = 1;
+            _manager.__timer = _timer;
+        }
+        
+        __evaluateAndSetValue(_manager);
+    };
+
+    /// @desc (Internal) Advances a manager to next track.
+    __moveToNextTrack = function(_manager, _keyForCompletion, _completedKeysRef, _overflow = 0) {
+        var _currentDef = _manager.__queue[_manager.__currentIndex];
+        if (is_method(_currentDef.__onTrackEnd)) _currentDef.__onTrackEnd();
+
+        if (_manager.__currentIndex + 1 < array_length(_manager.__queue)) {
+            __initTrack(_manager, _manager.__currentIndex + 1, _overflow, 1);
+        } else {
+            _manager.__isFinished = true;
+
+            if (is_method(_manager.__onSequenceEnd)) _manager.__onSequenceEnd();
+            // Only kill if the user didn't rescue it (rewind/seek inside the callback sets __isFinished back to false)
+            if (_manager.__isFinished) {
+                array_push(_completedKeysRef, _keyForCompletion);
+            }
         }
     };
-    /// @desc (Internal) Applies a callback to one, many, or all active transitions.
-    _apply_to_managers = function(_target_keys, _action_func, _data = undefined) {
-        if (_target_keys == undefined) {
-            // --- Affect All ---
-            var _keys = variable_struct_get_names(active_transitions);
-            for (var i = 0; i < array_length(_keys); i++) {
-                var _key = _keys[i];
-                if (variable_struct_exists(active_transitions, _key)) {
-                    _action_func(active_transitions[$ _key], _data, _key); 
-                }
-            }
-        } else if (is_array(_target_keys)) {
-            // --- Affect Array ---
-            for (var i = 0; i < array_length(_target_keys); i++) {
-                var _key = _target_keys[i];
-                if (variable_struct_exists(active_transitions, _key)) {
-                    _action_func(active_transitions[$ _key], _data, _key); 
-                }
-            }
-        } else if (is_string(_target_keys)) {
-            // --- Affect Single ---
-            if (variable_struct_exists(active_transitions, _target_keys)) {
-                _action_func(active_transitions[$ _target_keys], _data, _target_keys); 
-            }
-        }
-    }
-    
-    /// @desc (Internal) Re-evaluates and sets a manager's current_val based on its timer.
-    _evaluate_and_set_value = function(_manager) {
-        // If the current spot is a wait, value is unchanged
-        var _current_def = _manager.queue[_manager.current_index];
-        if (variable_struct_exists(_current_def, "is_wait")) {
-            return; 
-        }
 
-        // It's a regular animation track. Evaluate it.
-        var _raw_progress = 0;
-        if (_current_def.duration <= 0) {
-            _raw_progress = 1;
+    /// @desc (Internal) Moves a manager backward.
+    __handleBackwardCompletion = function(_manager, _keyForCompletion, _underflow) {
+        if (_manager.__currentIndex > 0) {
+            __initTrack(_manager, _manager.__currentIndex - 1, _underflow, -1);
         } else {
-            _raw_progress = clamp(_manager.timer / _current_def.duration, 0, 1);
+            _manager.__timer = 0;
+            _manager.__direction = 1;
         }
-        var _eased_progress = 0;
-        var _lerper = _manager.lerp_func;
-        var _CASSETTE_source = _current_def.CASSETTE_func;
-        
-        if (is_struct(_CASSETTE_source) && variable_struct_exists(_CASSETTE_source, "__is_anim_curve")) {
-            _eased_progress = animcurve_channel_evaluate(_CASSETTE_source.channel, _raw_progress);
-        } else {
-            _eased_progress = _CASSETTE_source(_raw_progress);
+    };
+
+    /// @desc (Internal) Apply function to managers. Handles Single Key, Array of Keys, or All Keys (undefined).
+    __applyToManagers = function(_targetKeys, _actionFunc, _data = undefined) {
+        if (_targetKeys == undefined) {
+            var _keys = variable_struct_get_names(__activeTransitions);
+            var _len = array_length(_keys);
+            var _i = 0; repeat(_len) {
+                var _k = _keys[_i];
+                if (variable_struct_exists(__activeTransitions, _k)) {
+                    _actionFunc(__activeTransitions[$ _k], _data, _k); 
+                }
+                _i++;
+            }
+        } else if (is_array(_targetKeys)) {
+            var _i = 0;
+            var _len = array_length(_targetKeys);
+            repeat(_len) {
+                var _k = _targetKeys[_i];
+                if (variable_struct_exists(__activeTransitions, _k)) {
+                    _actionFunc(__activeTransitions[$ _k], _data, _k);
+                }
+                _i++;
+            }
+        } else if (is_string(_targetKeys)) {
+            if (variable_struct_exists(__activeTransitions, _targetKeys)) {
+                _actionFunc(__activeTransitions[$ _targetKeys], _data, _targetKeys);
+            }
         }
-        
-        // Seeking/initing doesn't support PingPong direction; it always resets to forward.
-        _manager.current_val = _lerper(_current_def.from_val, _current_def.to_val, _eased_progress);
-    }
+    };
 
     /// @desc (Internal) The core logic for seeking.
-    _seek_manager = function(_manager, _seek_amount, _key) { 
-    
-        _manager.timer += _seek_amount;
+    __seekManager = function(_manager, _seekAmount, _key) { 
+        _manager.__timer += _seekAmount;
+        var _chainIsFinished = false;
+        var _currentDef = _manager.__queue[_manager.__currentIndex];
         
-        var _chain_is_finished = false;
-        var _current_def = _manager.queue[_manager.current_index];
-        
-        // --- 2. Handle Forward Overflow (timer > duration) ---
-        while (_manager.timer > _current_def.duration) {
+        // --- Forward Overflow ---
+        while (_manager.__timer > _currentDef.duration) {
+            var _overflowTime = _manager.__timer - _currentDef.duration;
+            var _isLooping = _currentDef.__animState == CASSETTE_ANIM.LOOP;
+            var _isPingPong = _currentDef.__animState == CASSETTE_ANIM.PING_PONG;
+            var _duration = _currentDef.duration;
             
-            var _overflow_time = _manager.timer - _current_def.duration;
-            var _is_looping = _current_def.anim_state == CASSETTE_ANIM.Loop;
-            var _is_pingpong = _current_def.anim_state == CASSETTE_ANIM.PingPong;
-            var _duration = _current_def.duration;
-
-            // --- Check for loop/pong on CURRENT track first ---
-            if ((_is_looping || _is_pingpong) && _manager.loops_left != 0) {
-
+            if ((_isLooping || _isPingPong) && _manager.__loopsRemaining != 0) {
                 if (_duration <= 0) { 
-                    _manager.timer = 0;
-                    _manager.direction = 1;
-                    break;
+                    _manager.__timer = 0;
+                    _manager.__direction = 1; 
+                    break; 
                 }
-
-                if (_is_looping) {
-                    _manager.timer = _manager.timer % _duration;
-                    _manager.direction = 1;
-                }
-                else { // _is_pingpong
-                    var _total_loop_duration = _duration * 2;
-                    var _wrapped_time = _manager.timer % _total_loop_duration;
-                    
-                    if (_wrapped_time > _duration) {
-                        // "pong"
-                        _manager.timer = _duration - (_wrapped_time - _duration);
-                        _manager.direction = -1;
+                
+                if (_isLooping) {
+                    _manager.__timer = _manager.__timer % _duration;
+                    _manager.__direction = 1;
+                } else { 
+                    var _totalLoopDuration = _duration * 2;
+                    var _wrappedTime = _manager.__timer % _totalLoopDuration;
+                    if (_wrappedTime > _duration) {
+                        _manager.__timer = _duration - (_wrappedTime - _duration);
+                        _manager.__direction = -1;
                     } else {
-                        // "ping"
-                        _manager.timer = _wrapped_time;
-                        _manager.direction = 1;
+                        _manager.__timer = _wrappedTime;
+                        _manager.__direction = 1;
                     }
                 }
-                break; 
+                break;
             }
             
-            // --- No loop. Try to move to NEXT track ---
-            if (_manager.current_index + 1 < array_length(_manager.queue)) {
-                _init_track(_manager, _manager.current_index + 1, _overflow_time, 1);
-                _current_def = _manager.queue[_manager.current_index];
-            } 
-            // --- No next track. This is the end. ---
-            else {
-                _manager.timer = _current_def.duration; 
-                _manager.direction = 1; 
-                _chain_is_finished = true; 
+            if (_manager.__currentIndex + 1 < array_length(_manager.__queue)) {
+                __initTrack(_manager, _manager.__currentIndex + 1, _overflowTime, 1);
+                _currentDef = _manager.__queue[_manager.__currentIndex];
+            } else {
+                _manager.__timer = _currentDef.duration;
+                _manager.__direction = 1; 
+                _chainIsFinished = true; 
                 break; 
             }
         }
 
-        // --- 3. Handle Backward Underflow (timer < 0) ---
-        while (_manager.timer < 0) {
+        // --- Backward Underflow ---
+        while (_manager.__timer < 0) {
+            var _underflowTime = _manager.__timer;
+            var _isLooping = _currentDef.__animState == CASSETTE_ANIM.LOOP;
+            var _isPingPong = _currentDef.__animState == CASSETTE_ANIM.PING_PONG;
+            var _duration = _currentDef.duration;
             
-            var _underflow_time = _manager.timer;
-            var _is_looping = _current_def.anim_state == CASSETTE_ANIM.Loop;
-            var _is_pingpong = _current_def.anim_state == CASSETTE_ANIM.PingPong;
-            var _duration = _current_def.duration;
-
-            // --- Check for loop/pong on CURRENT track first ---
-            if ((_is_looping || _is_pingpong) && _manager.loops_left != 0) {
-                
+            if ((_isLooping || _isPingPong) && _manager.__loopsRemaining != 0) {
                 if (_duration <= 0) { 
-                    _manager.timer = 0;
-                    _manager.direction = 1;
-                    break;
+                    _manager.__timer = 0;
+                    _manager.__direction = 1; 
+                    break; 
                 }
-
-                if (_is_looping) {
-                    _manager.timer = _manager.timer % _duration;
-                    _manager.direction = 1;
-                } 
-                else { // _is_pingpong
-                    var _total_loop_duration = _duration * 2;
-                    var _wrapped_time = _manager.timer % _total_loop_duration;
-                    
-                    if (_wrapped_time > _duration) {
-                        // "pong"
-                        _manager.timer = _duration - (_wrapped_time - _duration);
-                        _manager.direction = -1;
+                
+                if (_isLooping) {
+                    _manager.__timer = _manager.__timer % _duration;
+                    _manager.__direction = 1;
+                } else { 
+                    var _totalLoopDuration = _duration * 2;
+                    var _wrappedTime = _manager.__timer % _totalLoopDuration;
+                    if (_wrappedTime > _duration) {
+                        _manager.__timer = _duration - (_wrappedTime - _duration);
+                        _manager.__direction = -1;
                     } else {
-                        // "ping"
-                        _manager.timer = _wrapped_time;
-                        _manager.direction = 1;
+                        _manager.__timer = _wrappedTime;
+                        _manager.__direction = 1;
                     }
                 }
-                break; 
+                break;
             }
             
-            // --- No loop. Try to move to PREVIOUS track ---
-            if (_manager.current_index > 0) {
-                _init_track(_manager, _manager.current_index - 1, _underflow_time, -1);
-                _current_def = _manager.queue[_manager.current_index];
-            } 
-            // --- No previous track. This is the beginning. ---
-            else {
-                _manager.timer = 0; 
-                _manager.direction = 1; 
+            if (_manager.__currentIndex > 0) {
+                __initTrack(_manager, _manager.__currentIndex - 1, _underflowTime, -1);
+                _currentDef = _manager.__queue[_manager.__currentIndex];
+            } else {
+                _manager.__timer = 0;
+                _manager.__direction = 1; 
                 break;
             }
         }
         
-        // --- 4. Finalize State ---
-        if (_chain_is_finished) {
-             _evaluate_and_set_value(_manager); 
-             _manager.is_paused = true; 
+        if (_chainIsFinished) {
+             __evaluateAndSetValue(_manager);
+             _manager.__isPaused = true; 
              return; 
         }
-        
-        _evaluate_and_set_value(_manager);
-    }
+        __evaluateAndSetValue(_manager);
+    };
 
-    // --- Easing Functions --
+    // --- Easing Library --
 
     // --- Sine ---
     /// @function InSine(progress)
-    /// @description Sine easing in. Accelerates from zero.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static InSine = function(progress) {
-        return 1 - cos((progress * pi) / 2);
+    static InSine = function(_progress) {
+        return 1 - cos((_progress * pi) / 2);
     };
 
     /// @function OutSine(progress)
-    /// @description Sine easing out. Decelerates to zero.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static OutSine = function(progress) {
-        return sin((progress * pi) / 2);
+    static OutSine = function(_progress) {
+        return sin((_progress * pi) / 2);
     };
 
     /// @function InOutSine(progress)
-    /// @description Sine easing in and out. Accelerates and decelerates.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static InOutSine = function(progress) {
-        return -(cos(pi * progress) - 1) / 2;
+    static InOutSine = function(_progress) {
+        return -(cos(pi * _progress) - 1) / 2;
     };
 
     // --- Quad ---
     /// @function InQuad(progress)
-    /// @description Quadratic easing in.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static InQuad = function(progress) {
-        return progress * progress;
+    static InQuad = function(_progress) {
+        return _progress * _progress;
     };
 
     /// @function OutQuad(progress)
-    /// @description Quadratic easing out.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static OutQuad = function(progress) { // Renamed from easeOutQuad for consistency
-        return 1 - power(1 - progress, 2);
+    static OutQuad = function(_progress) {
+        return 1 - power(1 - _progress, 2);
     };
 
     /// @function InOutQuad(progress)
-    /// @description Quadratic easing in and out.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static InOutQuad = function(progress) {
-        return (progress < 0.5) ? 2 * progress * progress : 1 - power(-2 * progress + 2, 2) / 2;
+    static InOutQuad = function(_progress) {
+        return (_progress < 0.5) ?
+            2 * _progress * _progress : 1 - power(-2 * _progress + 2, 2) / 2;
     };
 
     // --- Cubic ---
     /// @function InCubic(progress)
-    /// @description Cubic easing in.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static InCubic = function(progress) {
-        return progress * progress * progress;
+    static InCubic = function(_progress) {
+        return _progress * _progress * _progress;
     };
 
     /// @function OutCubic(progress)
-    /// @description Cubic easing out.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static OutCubic = function(progress) {
-        return 1 - power(1 - progress, 3);
+    static OutCubic = function(_progress) {
+        return 1 - power(1 - _progress, 3);
     };
 
     /// @function InOutCubic(progress)
-    /// @description Cubic easing in and out.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static InOutCubic = function(progress) {
-        return (progress < 0.5) ? 4 * progress * progress * progress : 1 - power(-2 * progress + 2, 3) / 2;
+    static InOutCubic = function(_progress) {
+        return (_progress < 0.5) ?
+            4 * _progress * _progress * _progress : 1 - power(-2 * _progress + 2, 3) / 2;
     };
 
     // --- Quart ---
     /// @function InQuart(progress)
-    /// @description Quartic easing in.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static InQuart = function(progress) {
-        return progress * progress * progress * progress;
+    static InQuart = function(_progress) {
+        return _progress * _progress * _progress * _progress;
     };
 
     /// @function OutQuart(progress)
-    /// @description Quartic easing out.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static OutQuart = function(progress) {
-        return 1 - power(1 - progress, 4);
+    static OutQuart = function(_progress) {
+        return 1 - power(1 - _progress, 4);
     };
 
     /// @function InOutQuart(progress)
-    /// @description Quartic easing in and out.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static InOutQuart = function(progress) {
-        return (progress < 0.5) ? 8 * progress * progress * progress * progress : 1 - power(-2 * progress + 2, 4) / 2;
+    static InOutQuart = function(_progress) {
+        return (_progress < 0.5) ?
+            8 * _progress * _progress * _progress * _progress : 1 - power(-2 * _progress + 2, 4) / 2;
     };
 
     // --- Quint ---
     /// @function InQuint(progress)
-    /// @description Quintic easing in.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static InQuint = function(progress) {
-        return progress * progress * progress * progress * progress;
+    static InQuint = function(_progress) {
+        return _progress * _progress * _progress * _progress * _progress;
     };
 
     /// @function OutQuint(progress)
-    /// @description Quintic easing out.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static OutQuint = function(progress) {
-        return 1 - power(1 - progress, 5);
+    static OutQuint = function(_progress) {
+        return 1 - power(1 - _progress, 5);
     };
 
     /// @function InOutQuint(progress)
-    /// @description Quintic easing in and out.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static InOutQuint = function(progress) {
-        return (progress < 0.5) ? 16 * progress * progress * progress * progress * progress : 1 - power(-2 * progress + 2, 5) / 2;
+    static InOutQuint = function(_progress) {
+        return (_progress < 0.5) ?
+            16 * _progress * _progress * _progress * _progress * _progress : 1 - power(-2 * _progress + 2, 5) / 2;
     };
 
     // --- Expo ---
     /// @function InExpo(progress)
-    /// @description Exponential easing in.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static InExpo = function(progress) {
-        return (progress == 0) ? 0 : power(2, 10 * progress - 10);
+    static InExpo = function(_progress) {
+        return (_progress == 0) ? 0 : power(2, 10 * _progress - 10);
     };
 
     /// @function OutExpo(progress)
-    /// @description Exponential easing out.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static OutExpo = function(progress) {
-        return (progress == 1) ? 1 : 1 - power(2, -10 * progress);
+    static OutExpo = function(_progress) {
+        return (_progress == 1) ? 1 : 1 - power(2, -10 * _progress);
     };
 
     /// @function InOutExpo(progress)
-    /// @description Exponential easing in and out.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static InOutExpo = function(progress) {
-        if (progress == 0) return 0;
-        if (progress == 1) return 1;
-        return (progress < 0.5) ? power(2, 20 * progress - 10) / 2 : (2 - power(2, -20 * progress + 10)) / 2;
+    static InOutExpo = function(_progress) {
+        if (_progress == 0) return 0;
+        if (_progress == 1) return 1;
+        return (_progress < 0.5) ?
+            power(2, 20 * _progress - 10) / 2 : (2 - power(2, -20 * _progress + 10)) / 2;
     };
 
     // --- Circ ---
     /// @function InCirc(progress)
-    /// @description Circular easing in.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static InCirc = function(progress) {
-        var _inner = 1 - power(progress, 2);
-        return 1 - ((sign(_inner) == -1)? 0 : sqrt(_inner));
+    static InCirc = function(_progress) {
+        var _inner = 1 - power(_progress, 2);
+        return 1 - ((sign(_inner) == -1) ? 0 : sqrt(_inner));
     };
 
     /// @function OutCirc(progress)
-    /// @description Circular easing out.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static OutCirc = function(progress) {
-        var _inner = 1 - power(progress - 1, 2);
-        return (sign(_inner) == -1)? 0 : sqrt(_inner);
+    static OutCirc = function(_progress) {
+        var _inner = 1 - power(_progress - 1, 2);
+        return (sign(_inner) == -1) ? 0 : sqrt(_inner);
     };
 
     /// @function InOutCirc(progress)
-    /// @description Circular easing in and out.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static InOutCirc = function(progress) {
-        if (progress < 0.5) {
-            var _inner = 1 - power(2 * progress, 2);
-            var _sqrt = (sign(_inner) == -1)? 0 : sqrt(_inner);
+    static InOutCirc = function(_progress) {
+        if (_progress < 0.5) {
+            var _inner = 1 - power(2 * _progress, 2);
+            var _sqrt = (sign(_inner) == -1) ? 0 : sqrt(_inner);
             return (1 - _sqrt) / 2;
         } else {
-            var _inner = 1 - power(-2 * progress + 2, 2);
-            var _sqrt = (sign(_inner) == -1)? 0 : sqrt(_inner);
+            var _inner = 1 - power(-2 * _progress + 2, 2);
+            var _sqrt = (sign(_inner) == -1) ? 0 : sqrt(_inner);
             return (_sqrt + 1) / 2;
         }
     };
 
     // --- Elastic ---
     /// @function InElastic(progress)
-    /// @description Elastic easing in.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static InElastic = function(progress) {
-        if (progress == 0) return 0;
-        if (progress == 1) return 1;
-        // Note: 10.75 = (CASSETTE_ELASTIC_PERIOD1_DIV * 3 + 1.75) if needed, relates to phase shift
-        return -power(2, 10 * progress - 10) * sin((progress * 10 - 10.75) * CASSETTE_ELASTIC_C4);
+    static InElastic = function(_progress) {
+        if (_progress == 0) return 0;
+        if (_progress == 1) return 1;
+        return -power(2, 10 * _progress - 10) * sin((_progress * 10 - 10.75) * CASSETTE_ELASTIC_C4);
     };
 
     /// @function OutElastic(progress)
-    /// @description Elastic easing out.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static OutElastic = function(progress) {
-        if (progress == 0) return 0;
-        if (progress == 1) return 1;
-        // Note: 0.75 = related to phase shift
-        return power(2, -10 * progress) * sin((progress * 10 - 0.75) * CASSETTE_ELASTIC_C4) + 1;
+    static OutElastic = function(_progress) {
+        if (_progress == 0) return 0;
+        if (_progress == 1) return 1;
+        return power(2, -10 * _progress) * sin((_progress * 10 - 0.75) * CASSETTE_ELASTIC_C4) + 1;
     };
 
     /// @function InOutElastic(progress)
-    /// @description Elastic easing in and out.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static InOutElastic = function(progress) {
-        if (progress == 0) return 0;
-        if (progress == 1) return 1;
-        // Note: 11.125 = (CASSETTE_ELASTIC_PERIOD2_DIV * 2 + 2.125) if needed, relates to phase shift
-        return (progress < 0.5)
-            ? -(power(2, 20 * progress - 10) * sin((20 * progress - 11.125) * CASSETTE_ELASTIC_C5)) / 2
-            : (power(2, -20 * progress + 10) * sin((20 * progress - 11.125) * CASSETTE_ELASTIC_C5)) / 2 + 1;
+    static InOutElastic = function(_progress) {
+        if (_progress == 0) return 0;
+        if (_progress == 1) return 1;
+        return (_progress < 0.5)
+            ? -(power(2, 20 * _progress - 10) * sin((20 * _progress - 11.125) * CASSETTE_ELASTIC_C5)) / 2
+            : (power(2, -20 * _progress + 10) * sin((20 * _progress - 11.125) * CASSETTE_ELASTIC_C5)) / 2 + 1;
     };
 
     // --- Back ---
     /// @function InBack(progress)
-    /// @description Back easing in. Overshoots then settles.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static InBack = function(progress) {
-        return CASSETTE_BACK_C3 * progress * progress * progress - CASSETTE_BACK_C1 * progress * progress;
+    static InBack = function(_progress) {
+        return CASSETTE_BACK_C3 * _progress * _progress * _progress - CASSETTE_BACK_C1 * _progress * _progress;
     };
 
     /// @function OutBack(progress)
-    /// @description Back easing out. Overshoots then settles.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static OutBack = function(progress) {
-        return 1 + CASSETTE_BACK_C3 * power(progress - 1, 3) + CASSETTE_BACK_C1 * power(progress - 1, 2);
+    static OutBack = function(_progress) {
+        return 1 + CASSETTE_BACK_C3 * power(_progress - 1, 3) + CASSETTE_BACK_C1 * power(_progress - 1, 2);
     };
 
     /// @function InOutBack(progress)
-    /// @description Back easing in and out.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static InOutBack = function(progress) {
-        return (progress < 0.5)
-            ? (power(2 * progress, 2) * ((CASSETTE_BACK_C2 + 1) * 2 * progress - CASSETTE_BACK_C2)) / 2
-            : (power(2 * progress - 2, 2) * ((CASSETTE_BACK_C2 + 1) * (progress * 2 - 2) + CASSETTE_BACK_C2) + 2) / 2;
+    static InOutBack = function(_progress) {
+        return (_progress < 0.5)
+            ? (power(2 * _progress, 2) * ((CASSETTE_BACK_C2 + 1) * 2 * _progress - CASSETTE_BACK_C2)) / 2
+            : (power(2 * _progress - 2, 2) * ((CASSETTE_BACK_C2 + 1) * (_progress * 2 - 2) + CASSETTE_BACK_C2) + 2) / 2;
     };
 
     // --- Bounce ---
     /// @function OutBounce(progress)
-    /// @description Bounce easing out.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static OutBounce = function(progress) {
-        if (progress < CASSETTE_BOUNCE_T1) { // < 1 / 2.75
-            return CASSETTE_BOUNCE_N1 * progress * progress;
-        } else if (progress < CASSETTE_BOUNCE_T2) { // < 2 / 2.75
-            progress -= CASSETTE_BOUNCE_O1; // -= 1.5 / 2.75
-            return CASSETTE_BOUNCE_N1 * progress * progress + CASSETTE_BOUNCE_A1; // + 0.75
-        } else if (progress < CASSETTE_BOUNCE_T3) { // < 2.5 / 2.75
-            progress -= CASSETTE_BOUNCE_O2; // -= 2.25 / 2.75
-            return CASSETTE_BOUNCE_N1 * progress * progress + CASSETTE_BOUNCE_A2; // + 0.9375
+    static OutBounce = function(_progress) {
+        if (_progress < CASSETTE_BOUNCE_T1) { // < 1 / 2.75
+            return CASSETTE_BOUNCE_N1 * _progress * _progress;
+        } else if (_progress < CASSETTE_BOUNCE_T2) { // < 2 / 2.75
+            _progress -= CASSETTE_BOUNCE_O1;
+            return CASSETTE_BOUNCE_N1 * _progress * _progress + CASSETTE_BOUNCE_A1;
+        } else if (_progress < CASSETTE_BOUNCE_T3) { // < 2.5 / 2.75
+            _progress -= CASSETTE_BOUNCE_O2;
+            return CASSETTE_BOUNCE_N1 * _progress * _progress + CASSETTE_BOUNCE_A2;
         } else {
-            progress -= CASSETTE_BOUNCE_O3; // -= 2.625 / 2.75
-            return CASSETTE_BOUNCE_N1 * progress * progress + CASSETTE_BOUNCE_A3; // + 0.984375
+            _progress -= CASSETTE_BOUNCE_O3;
+            return CASSETTE_BOUNCE_N1 * _progress * _progress + CASSETTE_BOUNCE_A3;
         }
     };
 
     /// @function InBounce(progress)
-    /// @description Bounce easing in.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static InBounce = function(progress) {
-        // Re-use OutBounce by inverting the progress
-        // Need to call the OutBounce function associated *with this instance*
-        return 1 - self.OutBounce(1 - progress);
+    static InBounce = function(_progress) {
+        return 1 - Cassette.OutBounce(1 - _progress);
     };
 
     /// @function InOutBounce(progress)
-    /// @description Bounce easing in and out.
-    /// @param {real} progress The normalized progress of the tween (0 to 1).
-    static InOutBounce = function(progress) {
-        // Re-use OutBounce by inverting/scaling the progress
-        // Need to call the OutBounce function associated *with this instance*
-        return (progress < 0.5)
-            ? (1 - self.OutBounce(1 - 2 * progress)) / 2
-            : (1 + self.OutBounce(2 * progress - 1)) / 2;
+    static InOutBounce = function(_progress) {
+        return (_progress < 0.5)
+            ? (1 - Cassette.OutBounce(1 - 2 * _progress)) / 2
+            : (1 + Cassette.OutBounce(2 * _progress - 1)) / 2;
     };
-}
-
-/// --- Experimental ---
-/// @function derp(current, target, decay_rate)
-/// @description A version of lerp that uses delta_time and pre-calculated decay rate.
-/// @param {Real} current      The current value.
-/// @param {Real} target       The target value.
-/// @param {Real} decay_rate   The rate of decay (1 / half_life_seconds).
-function derp(current, target, decay_rate) {
-    var _delta_seconds = delta_time / 1000000;
-
-    var _amount = 1 - power(0.5, _delta_seconds * decay_rate);
-
-    return lerp(current, target, _amount);
 }
