@@ -5,6 +5,9 @@
 // -- ver:  2.0.0 -- Fluent Interface, Struct Tweening, Optimized Performance.
 // -- lic:  MIT
 
+// --- Playback speed (Internal use, don't touch this. Use the '.set_speed' method)
+#macro CASSETTE_DEFAULT_PLAYBACK_SPEED 1.0
+
 // --- Bounce Constants ---
 #macro CASSETTE_BOUNCE_N1 7.5625
 #macro CASSETTE_BOUNCE_D1 2.75
@@ -89,13 +92,14 @@ function Cassette(_use_delta_time = false, _auto_start = false, _default_lerp = 
         // --- Setters ---
 
         /// @function from(value_or_struct)
-        /// @desc Sets the start value. Can be a Real or a Struct (vector/style).
+        /// @desc Sets the start value. Can be a Real or a Struct (e.g. vector/style).
         from = function(_val) {
             var _last = array_last(queue);
             if (_last.is_wait) show_error("Cassette: Cannot set 'from' on a wait() command.", true);
             
             _last.from_val = _val;
 
+            // Update manager immediately if this is the first track
             if (array_length(queue) == 1) {
                 manager.current_val = _val;
             }
@@ -207,7 +211,7 @@ function Cassette(_use_delta_time = false, _auto_start = false, _default_lerp = 
             on_sequence_end: undefined,
             
             // State
-            current_val: 0, // overwritten by .from()
+            current_val: 0, // Overwritten by .from()
             timer: 0,
             direction: 1,
             loops_left: 1,
@@ -256,22 +260,8 @@ function Cassette(_use_delta_time = false, _auto_start = false, _default_lerp = 
                 continue;
             }
 
-            // --- 3. Animation Logic ---
-            var _raw_progress = (_current_def.duration <= 0) ? 1 : clamp(_manager.timer / _current_def.duration, 0, 1);
-            var _eased_progress = 0;
-            
-            if (_current_def.is_curve) {
-                _eased_progress = animcurve_channel_evaluate(_current_def.CASSETTE_func.channel, _raw_progress);
-            } else {
-                _eased_progress = _current_def.CASSETTE_func(_raw_progress);
-            }
-
-            _manager.current_val = _calculate_current_value(
-                _current_def.from_val, 
-                _current_def.to_val, 
-                _eased_progress, 
-                _manager.lerp_func
-            );
+            // --- 3. Handle Animation ---
+            _evaluate_and_set_value(_manager);
             
             // --- 4. Handle Completion (Boundaries) ---
             var _is_looping = _current_def.anim_state == CASSETTE_ANIM.Loop;
@@ -436,18 +426,15 @@ function Cassette(_use_delta_time = false, _auto_start = false, _default_lerp = 
     }
     
     /// @function is_active([key])
-    /// @desc Checks if a specific transition exists, or if ANY transition exists (if key is undefined).
     is_active = function(_key = undefined) {
         if (_key != undefined) {
             return variable_struct_exists(active_transitions, _key);
         }
-
         var _names = variable_struct_get_names(active_transitions);
         return (array_length(_names) > 0);
     }
     
     /// @function is_paused([key])
-    /// @desc Specific: Returns status of that key. Global: Returns true only if ALL tracks are paused.
     is_paused = function(_key = undefined) {
         if (_key != undefined) {
             if (variable_struct_exists(active_transitions, _key)) {
@@ -498,6 +485,20 @@ function Cassette(_use_delta_time = false, _auto_start = false, _default_lerp = 
         }
     }
 
+    /// @desc (Internal) Calculates and sets the current value based on time/queue.
+    _evaluate_and_set_value = function(_manager) {
+        var _def = _manager.queue[_manager.current_index];
+        if (_def.is_wait) return;
+
+        var _progress = (_def.duration <= 0) ? 1 : clamp(_manager.timer / _def.duration, 0, 1);
+        var _eased = 0;
+        
+        if (_def.is_curve) _eased = animcurve_channel_evaluate(_def.CASSETTE_func.channel, _progress);
+        else _eased = _def.CASSETTE_func(_progress);
+
+        _manager.current_val = _calculate_current_value(_def.from_val, _def.to_val, _eased, _manager.lerp_func);
+    }
+
     /// @desc (Internal) Sets a manager's state to a specific track index.
     _init_track = function(_manager, _index, _timer = 0, _start_dir = 1) {
         _manager.current_index = _index;
@@ -513,15 +514,7 @@ function Cassette(_use_delta_time = false, _auto_start = false, _default_lerp = 
             _manager.timer = _timer;
         }
         
-        if (!_def.is_wait) {
-            var _progress = (_def.duration <= 0) ? 1 : clamp(_manager.timer / _def.duration, 0, 1);
-            var _eased = 0;
-            
-            if (_def.is_curve) _eased = animcurve_channel_evaluate(_def.CASSETTE_func.channel, _progress);
-            else _eased = _def.CASSETTE_func(_progress);
-
-            _manager.current_val = _calculate_current_value(_def.from_val, _def.to_val, _eased, _manager.lerp_func);
-        }
+        _evaluate_and_set_value(_manager);
     }
 
     /// @desc (Internal) Advances a manager to next track.
