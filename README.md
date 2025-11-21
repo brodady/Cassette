@@ -1,184 +1,165 @@
-<p align="center">
-<img src = "cassette_logo_icon.png" alt = "Cassette Logo Icon")>
-</p>
+<p align="center">  
+<img src="cassette_logo_icon.png" alt="Cassette Logo Icon" width="128">
 
-# Cassette
+# **Cassette**
 
-A lightweight, self-contained GML script for creating smooth animations. Cassette provides a rich collection of standard easing functions and a simple system for building complex, chainable transitions. 
+## **A lightweight, self-contained GML script for creating smooth animations.**
 
-Animate anything from UI elements to character movements with just a few lines of code.
+Cassette provides a rich collection of standard easing functions and a fluent interface for building complex, chainable transitions. Animate anything from UI elements and style structs to character movements and attack combos with just a few lines of code.
 
-## 🚀 Quickstart Guide
+## **Quickstart Guide**
 
-### 1\. Installation
+### **1. Installation**
 
-Simply add the `Cassette` script to your GameMaker project.
+Simply add the Cassette script to your GameMaker project.
 
-### 2\. Usage 
-Define a Cassette manager. 
-I recommend using 'ease' for semantic clarity i.e. ease.InOutElastic(t)
+### **2. Usage & Initialization**
 
-```gml
-// Create Event
-ease = new Cassette();
+Define a Cassette manager in your Create Event. It is recommended to name the variable ease or anim for semantic clarity (e.g., ease.InOutElastic).
+
+*Breaking Change v2.0: Configuration is now passed into the constructor rather than using Macros.*
+
+```gml  
+// Create Event  
+// new Cassette(use_seconds, auto_start, default_lerp)  
+ease = new Cassette(false, false);   
 ```
 
-*Note: You can toggle between frame-based and time-based animations by setting the `CASSETTE_USE_DELTA_TIME` macro at the top of the script.*
+#### **Constructor Arguments**
 
-### 3\. Animate\!
+*All arguments are optional.*
 
-You can now start, stop, and get values from the static `ease` manager anywhere in your code.
+| Argument | Type | Default | Description |
+| :---- | :---- | :---- | :---- |
+| use_seconds | bool | false | If true, uses delta_time (seconds). If false, uses frames. |
+| auto_start | bool | false | If true, animations play immediately. If false, requires .play(). |
+| default_lerp | func | lerp | Custom interpolation function to use as default for all transitions. |
 
-To start a new animation, use `.transition()`. You can chain multiple tweens (tracks) together using `.add()`.
+### **3. Animate!**
 
-```gml
-// Create Event
+To start a new animation, use .transition(). In v2.0, you build your animation using chainable setter methods like ```.from()```, ```.to()```, and ```.duration()```.
 
-// Animate x to x+200, wait 30 frames, then animate back to original x
-ease.transition("player_x", x, x + 200, 60, ease.OutExpo)
-    .wait(30)
-    .add(x + 200, x, 60, ease.InExpo);
+#### 
 
-// Animate y position with a PingPong effect that repeats 3 times
-ease.transition("player_y", y, y + 100, 90, ease.OutBounce, CASSETTE_ANIM.PingPong, 3);
-```
-**Note:** By default (CASSETTE_AUTO_START = false), animations must be started manually. You can either call ease.play("player_x") after creating a transition or set CASSETTE_AUTO_START to true at the top of the script.
+#### **Basic Movement**
 
-To get the current value of an animation, use `ease.get_value()`. Apply this value in a Step or Draw event.
+```gml  
+// Create Event  
+// Animate x from current position to x+200 over 60 frames  
+ease.transition("slide_right")  
+    .from(x)  
+    .to(x + 200)  
+    .duration(60)  
+    .ease(ease.OutExpo);
 
-```gml
-// Step Event
-ease.update(); 
-
-// The second argument is a default value if the animation isn't active
-x = ease.get_value("player_x", x);
-y = ease.get_value("player_y", y);
-```
-
-### 4. Callback functions
-You can execute functions when a single track finishes or when an entire sequence completes.
-- **Track End**: Pass a function as the last argument to ```.add()``` or ```.wait()```.
-- **Sequence End**: Chain the ```.on_end(my_func)``` method.
-
-```gml
-// Create Event
-ease = new Cassette();
-
-// A function to run when the whole chain is done
-var on_my_sequence_complete = function() {
-    show_debug_message("The entire player_x sequence is finished!");
-}
-
-// A function to run when the first track is done
-var on_first_track_complete = function() {
-    show_debug_message("Finished moving to x+200. Waiting...");
-}
-
-// Animate x, with a callback on the first track and a final callback on the sequence
-ease.transition("player_x", x, x + 200, 60, ease.OutExpo, CASSETTE_ANIM.Once, -1, on_first_track_complete)
-    .wait(30)
-    .add(x + 200, x, 60, ease.InExpo)
-    .on_end(on_my_sequence_complete);
-
-ease.play("player_x");
-```
------
-## Playback Controls
-
-You can control the playback of any active transition. Most control methods can be applied globally (e.g., ease.pause()) to affect all animations, or specifically (e.g., ease.pause("player_x")) to target just one.
-
-State & Speed
-```gml
-.play([keys]) // Resumes a paused animation.
-
-.pause([keys]) // Pauses an animation.
-
-.stop(key) // Immediately stops and removes a specific animation.
-
-.set_speed(speed, [keys]) // Sets the playback speed. 1.0 is normal, 2.0 is double speed, -1.0 is reverse, and etc.
+// Start the animation (required if auto_start was false)  
+ease.play("slide_right");  
 ```
 
-Navigation & Seeking
-```gml
-.rewind([keys]) // Resets the animation to the very beginning (first track, time 0).
+#### **Chaining Sequences**
 
-.ffwd([keys]) // Jumps to the very end of the entire chain.
+Use .```next()``` to add a new track to the sequence.
 
-.skip([keys]) // Skips to the start of the next track in the chain.
+New in v2.0: You can omit ```.from()``` on chained tracks. Cassette will automatically use the .to() value of the previous track as the start point.
 
-.back([keys]) // Jumps to the start of the previous track.
-
-.seek(amount, [keys]) // Moves the timer by a specific amount (in frames or seconds).
+```gml  
+// Move right, wait, then move back and wait again; repeat.  
+ease.transition("patrol")  
+    .from(x)  
+    .to(x + 200)  
+    .duration(60)  
+    .ease(ease.OutExpo)  
+    .wait(30)           // Wait 30 frames  
+    .next()             // Start next track  
+    .to(x)              // Move back to original x (omitting .from)  
+    .duration(60)  
+    .ease(ease.InExpo)  
+    .wait(30)  
+    .on_sequence_end(function() {   
+        ease.rewind("patrol");   
+        ease.play("patrol");   
+    });  
 ```
 
-Checking Status
-```gml
-.is_active(key) // Returns true if an animation with this key exists.
+#### **Struct Tweening**
 
-.is_paused(key) // Returns true if the animation is currently paused.
+You can animate structs directly. Useful for colors, vectors, or other data structures.
 
-.get_speed(key) // Returns the current playback speed of the animation.
+*Note: This is not recursive. Nested structs are not supported.*
+
+```gml 
+// Create Event  
+my_style = { x: 10, y: 10, alpha: 1 };
+
+ease.transition("style_anim")  
+    .from(my_style)  
+    .to({ x: 100, y: 50, alpha: 0 })  
+    .duration(60);  
 ```
 
-Example
-```gml
-// In a Step Event
-ease.update(); 
+## 
 
-// Toggle pause for "player_y"
-if (keyboard_check_pressed(vk_space))
-{
-    if (ease.is_paused("player_y")) {
-        ease.play("player_y");
-    } else {
-        ease.pause("player_y");
-    }
-}
+## **API Reference**
 
-// Set speed to reverse
-if (keyboard_check_pressed(ord("R")))
-{
-    ease.set_speed(-1.0, "player_y");
-}
+### **Callback Functions**
 
-// Seek forward 30 frames
-if (keyboard_check_pressed(ord("S")))
-{
-    ease.seek(30, "player_y");
-}
+Cassette offers granular control over events.
+
+| Callback | Description |
+| :---- | :---- |
+| .on_update(func) | Runs every frame while the track is active. Useful for side effects. |
+| .on_end(func) | Runs when a specific *track* (segment) finishes. |
+| .on_sequence_end(func) | Runs when the *entire* transition chain finishes. |
+
+*Note: Standard playback callbacks are also available: ```.on_play()```, ```.on_pause()```, ```.on_rewind()```, etc.*
+
+### **Playback Controls**
+
+Controls can be applied globally (affecting all animations) or targeted to a specific key (e.g., ease.pause("player_x")).
+
+#### **State & Speed**
+
+| Method | Description |
+| :---- | :---- |
+| .play([keys]) | Resumes a paused animation. |
+| .pause([keys]) | Pauses an animation. |
+| .stop(key) | Immediately stops and removes a specific animation. |
+| .set_speed(val, [keys]) | Sets playback speed (e.g., 1.0 is normal, -1.0 is reverse). |
+
+#### **Navigation**
+
+| Method | Description |
+| :---- | :---- |
+| .rewind([keys]) | Resets animation to the beginning (Track 0, Time 0). |
+| .ffwd([keys]) | Jumps to the very end of the entire chain. |
+| .skip([keys]) | Skips to the start of the *next* track in the chain. |
+| .back([keys]) | Jumps to the start of the *previous* track. |
+| .seek(val, [keys]) | Moves the timer by a specific amount (frames or seconds). |
+
+#### **Status Checks**
+
+```gml  
+.is_active(key) // Returns true if an animation with this key exists  
+.is_paused(key) // Returns true if currently paused  
+.get_speed(key) // Returns current playback speed  
 ```
 
-## Using Custom Curves
+### **Custom Curves**
 
-Cassette seamlessly integrates with GameMaker's built-in Animation Curves.
+Cassette integrates with GameMaker's built-in Animation Curves.
 
-1.  Create an Animation Curve asset in your project (e.g., `ac_MyCurve`).
-2.  Pass it to the `ease.custom()` method to prepare it for use.
-3.  Use the result as the easing function in your transition.
+1. Create an Animation Curve asset (e.g., ac_MyCurve).  
+2. Pass it to ease.custom() to prepare it.  
+3. Use the result as the easing function.
 
-<!-- end list -->
-
-```gml
-// Prepare your custom curve
 var my_custom_ease = ease.custom(ac_MyCurve);
 
-// Use it in a transition!
 ease.transition("my_value", 0, 100, 120, my_custom_ease);
 
-// Apply the value
-my_variable = ease.get_value("my_value", my_variable);
-```
+## **License**
 
------
-
-## License
-
-**MIT License**
-
-Copyright (c) 2025 Mr. Giff
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
+**MIT License**  
+Copyright (c) 2025 Mr. Giff  
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
