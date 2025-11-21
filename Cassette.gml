@@ -1,20 +1,10 @@
 /// --- Cassette ---
 // A simple yet powerful animation system with chainable transitions.
-// Featuring a portable collection of easing functions in a handy literal syntax. e.g. "ease.InOutExpo(_t)"
+// Featuring a portable collection of easing functions in a handy literal syntax.
 // -- by:   Mr. Giff
-// -- ver:  1.4.1 -- Fixed small typo (removed defunct static call)
+// -- ver:  2.0.0 -- Fluent Interface, Struct Tweening, Optimized Performance.
 // -- lic:  MIT
 
-// --- Take time in Seconds if true (e.g 0.9) vs Frames (e.g 120)
-#macro CASSETTE_USE_DELTA_TIME false
-
-// --- Whether animations should start playing or be started manually with the '.play' method
-#macro CASSETTE_AUTO_START false 
-
-// --- Playback speed (Internal use, don't touch this. Use the '.set_speed' method)
-#macro CASSETTE_DEFAULT_PLAYBACK_SPEED 1.0
-
-// "Fast Math"
 // --- Bounce Constants ---
 #macro CASSETTE_BOUNCE_N1 7.5625
 #macro CASSETTE_BOUNCE_D1 2.75
@@ -44,55 +34,150 @@
 /// @enum CASSETTE_ANIM
 /// @desc Defines the playback behavior for a transition.
 enum CASSETTE_ANIM {
-    Once,     // Plays the animation one time from start to finish (default).
-    Loop,     // Restarts the animation from the beginning after it finishes.
-    PingPong  // Reverses the animation direction when it reaches the end.
+    Once,
+    Loop, 
+    PingPong
 }
 
-/// @function Cassette()
-/// @description A centralized, self-contained class for chained, sequenced animations with advanced playback
-function Cassette() constructor{
+/// @function Cassette([use_delta_time], [auto_start], [default_lerp])
+/// @description A centralized, self-contained class for chained, sequenced animations.
+function Cassette(_use_delta_time = false, _auto_start = false, _default_lerp = lerp) constructor {
     
     active_transitions = {};
+    use_delta_time = _use_delta_time;
+    default_auto_start = _auto_start;
+    default_lerp = _default_lerp;
 
     // --- Private Chain Builder ---
-    // This is returned by 'transition()' to allow for method chaining.
     function ChainBuilder(_manager_ref) constructor {
         manager = _manager_ref;
         queue = _manager_ref.queue;
-        
-        /// @function add(from, to, duration, ease_func, [anim_state], [loop_for], [callback])
-        /// @desc Adds a new transition to the sequence.
-        add = function(_from, _to, _duration, ease_func, _anim_state = CASSETTE_ANIM.Once, _loop_for = -1, _callback = undefined) {
-            var _next_definition = {
-                from_val: _from, to_val: _to, duration: _duration, CASSETTE_func: ease_func,
-                anim_state: _anim_state, loops_left: _loop_for,
-                on_track_end: _callback
+
+        /// @function next([label])
+        /// @desc Adds a new segment to the CURRENT sequence. 
+        next = function(_label = undefined) {
+            var _def = {
+                label: _label, 
+                from_val: 0, 
+                to_val: 0, 
+                duration: 1.0,
+                CASSETTE_func: Cassette.InQuad, 
+                is_curve: false, 
+                anim_state: CASSETTE_ANIM.Once,
+                loops_left: -1,
+                on_track_end: undefined,
+                is_wait: false
             };
-            array_push(queue, _next_definition);
-            return self;
-        } 
+            array_push(queue, _def);
+            return self; 
+        }
         
-        /// @function wait(duration, [on_track_end])
-        /// @desc Adds a pause to the sequence for a given duration.
-        /// @param {real} _duration The time to wait (in frames or seconds, matching CASSETTE_USE_DELTA_TIME).
-        /// @param {Function} [_callback] Optional callback to run when this wait finishes.
+        /// @function wait(duration, [callback])
+        /// @desc Adds a pause to the sequence.
         wait = function(_duration, _callback = undefined) {
-            var _wait_definition = {
+            var _def = {
                 is_wait: true,
                 duration: _duration,
                 anim_state: CASSETTE_ANIM.Once,
                 loops_left: 1,
                 on_track_end: _callback
             };
-            array_push(queue, _wait_definition);
+            array_push(queue, _def);
             return self;
         }
 
-        /// @function on_end(callback_func)
-        /// @desc Sets a callback function to run when the entire sequence is complete.
-        /// @param {Function} _func The function to call.
+        // --- Setters ---
+
+        /// @function from(value_or_struct)
+        /// @desc Sets the start value. Can be a Real or a Struct (vector/style).
+        from = function(_val) {
+            var _last = array_last(queue);
+            if (_last.is_wait) show_error("Cassette: Cannot set 'from' on a wait() command.", true);
+            
+            _last.from_val = _val;
+
+            if (array_length(queue) == 1) {
+                manager.current_val = _val;
+            }
+            return self;
+        }
+
+        /// @function to(value_or_struct)
+        /// @desc Sets the end value. Must match the type of 'from' (Real or Struct).
+        to = function(_val) {
+            var _last = array_last(queue);
+            if (_last.is_wait) show_error("Cassette: Cannot set 'to' on a wait() command.", true);
+            _last.to_val = _val;
+            return self;
+        }
+
+        /// @function duration(seconds_or_frames)
+        /// @desc Sets the duration of the current track.
+        duration = function(_val) {
+            var _last = array_last(queue);
+            _last.duration = _val;
+            return self;
+        }
+
+        /// @function ease(function_or_curve)
+        /// @desc Sets the easing function or Animation Curve struct.
+        ease = function(_func) {
+            var _last = array_last(queue);
+            if (_last.is_wait) show_error("Cassette: Cannot set 'ease' on a wait() command.", true);
+
+            _last.CASSETTE_func = _func;
+            
+            if (is_struct(_func) && variable_struct_exists(_func, "__is_anim_curve")) {
+                _last.is_curve = true;
+            } else {
+                _last.is_curve = false;
+            }
+            return self;
+        }
+
+        /// @function loop([times])
+        /// @desc Repeats THIS track. Empty or -1 = Infinite. 1 = Play + Repeat once.
+        loop = function(_times = -1) {
+            var _last = array_last(queue);
+            if (_last.is_wait) show_error("Cassette: Cannot set 'loop' on a wait() command.", true);
+            
+            _last.anim_state = CASSETTE_ANIM.Loop;
+            
+            // Convert "Repeats" to "Total Plays"
+            if (_times != -1) _times += 1; 
+            
+            _last.loops_left = _times;
+
+            if (array_length(queue) == 1) manager.loops_left = _times;
+
+            return self;
+        }
+
+        /// @function pingpong([times])
+        /// @desc PingPongs THIS track. Empty or -1 = Infinite. 1 = There and Back (1 cycle).
+        pingpong = function(_times = -1) {
+            var _last = array_last(queue);
+            if (_last.is_wait) show_error("Cassette: Cannot set 'pingpong' on a wait() command.", true);
+            
+            _last.anim_state = CASSETTE_ANIM.PingPong;
+            _last.loops_left = _times;
+            
+            if (array_length(queue) == 1) manager.loops_left = _times;
+            
+            return self;
+        }
+        
+        /// @function on_end(callback)
+        /// @desc Callback for when THIS specific track ends.
         on_end = function(_func) {
+            var _last = array_last(queue);
+            _last.on_track_end = _func;
+            return self;
+        }
+
+        /// @function on_sequence_end(callback)
+        /// @desc Callback for when the ENTIRE chain finishes.
+        on_sequence_end = function(_func) {
             manager.on_sequence_end = _func;
             return self;
         }
@@ -100,75 +185,64 @@ function Cassette() constructor{
     
     // --- Public Methods ---
     
-    /// @function transition(key, from, to, duration, func, [anim_state], [loop_for], [custom_lerp_func])
-    /// @description Starts a new transition sequence and returns a chainable object.
-    transition = function(_key, _from, _to, _duration, _func, _anim_state = CASSETTE_ANIM.Once, _loop_for = -1, _callback = undefined, _lerp_func = lerp) {
-        // This is the definition for the first transition in the sequence.
-        var _first_definition = {
-            from_val: _from, to_val: _to, duration: _duration, CASSETTE_func: _func,
-            anim_state: _anim_state, loops_left: _loop_for,
-            on_track_end: _callback
+    /// @function transition(key, [custom_lerp])
+    /// @description Starts a new transition sequence and returns a ChainBuilder.
+    transition = function(_key, _lerp_func = default_lerp) {
+        
+        // Create the first "Default" definition to initialize the queue
+        var _first_def = {
+            label: "Start",
+            from_val: 0, to_val: 0, duration: 1.0, 
+            CASSETTE_func: Cassette.InQuad, 
+            is_curve: false,
+            anim_state: CASSETTE_ANIM.Once, loops_left: -1,
+            on_track_end: undefined,
+            is_wait: false
         };
         
-        // The manager holds the queue and the live state of the currently running animation.
         var _manager = { 
-            queue: [_first_definition],
+            queue: [_first_def],
             current_index: 0,
-            lerp_func: _lerp_func,
+            lerp_func: _lerp_func, 
             on_sequence_end: undefined,
             
             // State
-            current_val: _from,
+            current_val: 0, // overwritten by .from()
             timer: 0,
-      
             direction: 1,
-            loops_left: (_anim_state == CASSETTE_ANIM.Once) ? 1 : _loop_for,
-            is_paused: !CASSETTE_AUTO_START,
+            loops_left: 1,
+            is_paused: !default_auto_start,
             playback_speed: CASSETTE_DEFAULT_PLAYBACK_SPEED, 
         };
         
         active_transitions[$ _key] = _manager;
         
-        // Return a new builder that operates on the manager.
         return new ChainBuilder(_manager); 
     }
     
     /// @function update()
-    /// @description Updates all active transitions.
+    /// @description Updates all active transitions. Call this in the Step Event.
     update = function() {
         var _completed_keys = [];
-        
         var _keys = variable_struct_get_names(active_transitions);
-        for (var i = 0; i < array_length(_keys); i++) {
+        
+        var i = 0; repeat(array_length(_keys)) {
             var _key = _keys[i];
-            
-            if (!variable_struct_exists(active_transitions, _key)) {
-                continue;
-            }
+            i++;
             
             var _manager = active_transitions[$ _key];
-        
-            if (_manager.is_paused) {
-                continue; 
-            }
+            if (_manager.is_paused) continue; 
             
             var _current_def = _manager.queue[_manager.current_index];
             
-            // --- 1. Handle time ---
-            var _playback_speed = _manager.playback_speed;
-            var _effective_direction = sign(_playback_speed) * _manager.direction; 
+            // --- 1. Handle Time ---
+            var _dt_multiplier = (use_delta_time) ? (delta_time / 1000000) : 1;
+            var _time_step = _dt_multiplier * abs(_manager.playback_speed);
             
-            var _time_step = 0;
-            if (CASSETTE_USE_DELTA_TIME) { 
-                _time_step = (delta_time / 1000000) * abs(_playback_speed); 
-            } else { 
-                _time_step = 1 * abs(_playback_speed); 
-            }
-            
-            _manager.timer += _time_step * _effective_direction;
+            _manager.timer += _time_step * (sign(_manager.playback_speed) * _manager.direction);
 
-            // --- 2. Handle wait ---
-            if (variable_struct_exists(_current_def, "is_wait")) {
+            // --- 2. Handle Wait ---
+            if (_current_def.is_wait) {
                 if (_manager.timer >= _current_def.duration) {
                     var _overflow = _manager.timer - _current_def.duration;
                     _manager.direction = 1; 
@@ -183,31 +257,27 @@ function Cassette() constructor{
             }
 
             // --- 3. Animation Logic ---
-            var _raw_progress = 0;
-            if (_current_def.duration <= 0) {
-                _raw_progress = 1;
-            } else {
-                _raw_progress = clamp(_manager.timer / _current_def.duration, 0, 1);
-            }
-            
+            var _raw_progress = (_current_def.duration <= 0) ? 1 : clamp(_manager.timer / _current_def.duration, 0, 1);
             var _eased_progress = 0;
-            var _lerper = _manager.lerp_func;
-            var _CASSETTE_source = _current_def.CASSETTE_func;
             
-            if (is_struct(_CASSETTE_source) && variable_struct_exists(_CASSETTE_source, "__is_anim_curve")) {
-                _eased_progress = animcurve_channel_evaluate(_CASSETTE_source.channel, _raw_progress);
+            if (_current_def.is_curve) {
+                _eased_progress = animcurve_channel_evaluate(_current_def.CASSETTE_func.channel, _raw_progress);
             } else {
-                _eased_progress = _CASSETTE_source(_raw_progress);
+                _eased_progress = _current_def.CASSETTE_func(_raw_progress);
             }
 
-            _manager.current_val = _lerper(_current_def.from_val, _current_def.to_val, _eased_progress);
+            _manager.current_val = _calculate_current_value(
+                _current_def.from_val, 
+                _current_def.to_val, 
+                _eased_progress, 
+                _manager.lerp_func
+            );
             
             // --- 4. Handle Completion (Boundaries) ---
             var _is_looping = _current_def.anim_state == CASSETTE_ANIM.Loop;
             var _is_pingpong = _current_def.anim_state == CASSETTE_ANIM.PingPong;
-            var _is_once = _current_def.anim_state == CASSETTE_ANIM.Once;
             
-            // --- FORWARD BOUNDARY (timer >= duration) ---
+            // FORWARD BOUNDARY
             if (_manager.timer >= _current_def.duration) {
                 var _overflow = _manager.timer - _current_def.duration;
 
@@ -227,11 +297,11 @@ function Cassette() constructor{
                         _move_to_next_track(_manager, _key, _completed_keys, _overflow);
                     }
                 }
-                else { // _is_once
+                else { // Once
                     _move_to_next_track(_manager, _key, _completed_keys, _overflow);
                 }
             }
-            // --- BACKWARD BOUNDARY (timer <= 0) ---
+            // BACKWARD BOUNDARY
             else if (_manager.timer < 0) {
                 var _underflow = _manager.timer;
                 
@@ -252,14 +322,16 @@ function Cassette() constructor{
                         _move_to_next_track(_manager, _key, _completed_keys, 0 - _underflow);
                     }
                 }
-                else { // _is_once
+                else { // Once
                      _handle_backward_completion(_manager, _key, _underflow);
                 }
             }
         }
         
-        for (var i = 0; i < array_length(_completed_keys); i++) {
-            variable_struct_remove(active_transitions, _completed_keys[i]);
+        // Clean up completed
+        var c = 0; repeat(array_length(_completed_keys)) {
+            variable_struct_remove(active_transitions, _completed_keys[c]);
+            c++;
         }
     }
 
@@ -267,44 +339,28 @@ function Cassette() constructor{
 
     /// @function play([keys])
     /// @desc Resumes one or all active transitions.
-    /// @param {String|Array<String>} [keys] Optional: A key or array of keys. Affects all if omitted.
     play = function(_keys = undefined) {
-        _apply_to_managers(_keys, function(_manager, _data, _key) {
-            _manager.is_paused = false;
-        });
+        _apply_to_managers(_keys, function(_m) { _m.is_paused = false; });
     }
 
     /// @function pause([keys])
     /// @desc Pauses one or all active transitions.
-    /// @param {String|Array<String>} [keys] Optional: A key or array of keys. Affects all if omitted.
     pause = function(_keys = undefined) {
-        _apply_to_managers(_keys, function(_manager, _data, _key) {
-            _manager.is_paused = true;
-        });
+        _apply_to_managers(_keys, function(_m) { _m.is_paused = true; });
     }
 
-    /// @function stop(key)
-    /// @description Immediately stops and removes a specific transition sequence.
-    /// @param {string} key The unique name of the transition sequence to stop.
-    /// @returns {bool} Returns true if a transition was found and stopped, otherwise false.
-    stop = function(_key, _trigger_end_callback = true) {
-        if (variable_struct_exists(active_transitions, _key)) {
-            var _manager = active_transitions[$ _key];
-
-            // Callback
-            if (_trigger_end_callback && is_method(_manager.on_sequence_end)) {
+    /// @function stop([keys], [trigger_callback])
+    /// @desc Stops one or all active transitions and removes them.
+    stop = function(_keys = undefined, _trigger_end_callback = true) {
+        _apply_to_managers(_keys, function(_manager, _do_callback, _key) {
+            if (_do_callback && is_method(_manager.on_sequence_end)) {
                 _manager.on_sequence_end();
             }
-            
             variable_struct_remove(active_transitions, _key);
-            return true;
-        }
-        return false;
+        }, _trigger_end_callback);
     }
 
     /// @function ffwd([keys])
-    /// @desc Jumps to the very end of one or all transitions (last track, last frame).
-    /// @param {String|Array<String>} [keys] Optional: A key or array of keys. Affects all if omitted.
     ffwd = function(_keys = undefined) {
         _apply_to_managers(_keys, function(_manager, _data, _key) {
             _manager.current_index = array_length(_manager.queue) - 1;
@@ -314,35 +370,22 @@ function Cassette() constructor{
             _manager.direction = 1;
             _manager.loops_left = 0;
             
-            if (!variable_struct_exists(_last_def, "is_wait")) {
-                _manager.current_val = _last_def.to_val;
-            }
+            if (!_last_def.is_wait) _manager.current_val = _last_def.to_val;
             
-            // Callback
-            if (is_method(_manager.on_sequence_end)) {
-                _manager.on_sequence_end();
-            }
-            stop(_key, false); 
+            if (is_method(_manager.on_sequence_end)) _manager.on_sequence_end();
+            variable_struct_remove(active_transitions, _key);
         });
     }
 
     /// @function rewind([keys])
-    /// @desc Reset one or all transitions to their very beginning (first track).
-    /// @param {String|Array<String>} [keys] Optional: A key or array of keys. Affects all if omitted.
     rewind = function(_keys = undefined) {
-        _apply_to_managers(_keys, function(_manager, _data, _key) {
+        _apply_to_managers(_keys, function(_manager) {
             _init_track(_manager, 0); 
-    
-            if (!CASSETTE_AUTO_START) {
-                _manager.is_paused = true;
-            }
+            if (!default_auto_start) _manager.is_paused = true;
         });
     }
 
      /// @function seek(amount, [keys])
-    /// @desc Seeks forward/backward by a duration (in frames/seconds).
-    /// @param {Real} amount The duration to seek (can be negative).
-    /// @param {String|Array<String>} [keys] Optional: A key or array of keys. Affects all if omitted.
     seek = function(_amount, _keys = undefined) {
         _apply_to_managers(_keys, _seek_manager, _amount);
     }
@@ -353,119 +396,109 @@ function Cassette() constructor{
             if (_manager.current_index + 1 < array_length(_manager.queue)) {
                 _init_track(_manager, _manager.current_index + 1);
             } else {
-                // At the end. Set final state, call callback, and stop.
                 var _last_index = array_length(_manager.queue) - 1;
                 var _last_def = _manager.queue[_last_index];
                 _init_track(_manager, _last_index, _last_def.duration); 
-
-                if (is_method(_manager.on_sequence_end)) {
-                    _manager.on_sequence_end();
-                }
-                
-                stop(_key, false); 
+                if (is_method(_manager.on_sequence_end)) _manager.on_sequence_end();
+                variable_struct_remove(active_transitions, _key);
             }
         });
     }
 
     /// @function back([keys])
     back = function(_keys = undefined) {
-        _apply_to_managers(_keys, function(_manager, _data, _key) {
-            if (_manager.current_index > 0) {
-                _init_track(_manager, _manager.current_index - 1);
-            } else {
-                _init_track(_manager, 0);
-            }
+        _apply_to_managers(_keys, function(_manager) {
+            if (_manager.current_index > 0) _init_track(_manager, _manager.current_index - 1);
+            else _init_track(_manager, 0);
         });
     }
-	
-	/// @function get_speed(key)
-    /// @description Returns the playback speed of a specific transition.
-    /// @param {String} _key The unique name of the transition sequence.
-    /// @returns {Real|Undefined} Returns the speed (e.g., 1.0) if the transition exists, or undefined if it does not.
+    
+    /// @function get_speed(key)
     get_speed = function(_key) {
-        if (variable_struct_exists(active_transitions, _key)) {
-            return active_transitions[$ _key].playback_speed;
-        }
+        if (variable_struct_exists(active_transitions, _key)) return active_transitions[$ _key].playback_speed;
         return undefined;
     }
-	
+    
     /// @function set_speed(speed, [keys])
-    /// @desc Sets playback speed for one or all transitions (1 = normal, 2 = 2x, -1 = reverse).
-    /// @param {Real} speed The new playback speed multiplier.
-    /// @param {String|Array<String>} [keys] Optional: A key or array of keys. Affects all if omitted.
     set_speed = function(_speed, _keys = undefined) {
-        _apply_to_managers(_keys, function(_manager, _speed_data, _key) { 
-            _manager.playback_speed = _speed_data; 
-        }, _speed);
+        _apply_to_managers(_keys, function(_m, _s) { _m.playback_speed = _s; }, _speed);
     }
 
     /// @function clear_all()
-    /// @description Immediately stops and removes all active transition sequences.
     clear_all = function() {
         active_transitions = {};
     }
 
     /// @function get_value(key, default_val)
-	/// @param {String} _key The unique name of the transition sequence.
-	/// @param {Real} _default_val The default value to fallback to.
-    /// @description Returns the current value of a named transition sequence.
     get_value = function(_key, _default_val) {
-        if (variable_struct_exists(active_transitions, _key)) {
-            return active_transitions[$ _key].current_val;
-        }
+        if (variable_struct_exists(active_transitions, _key)) return active_transitions[$ _key].current_val;
         return _default_val;
     }
     
-    /// @function is_active(key)
-	/// @param {String} _key The unique name of the transition sequence.
-    /// @description Returns true if a specific transition sequence is in process (if it exists, not the same as paused).
-    is_active = function(_key) {
-        return variable_struct_exists(active_transitions, _key);
-    }
-	
-	/// @function is_paused(key)
-    /// @description Returns true if a specific transition sequence is currently paused.
-    /// @param {String} _key The unique name of the transition sequence.
-    /// @returns {Bool|Undefined} Returns true/false if the transition exists, or undefined if it does not.
-    is_paused = function(_key) {
-        if (variable_struct_exists(active_transitions, _key)) {
-            return active_transitions[$ _key].is_paused;
+    /// @function is_active([key])
+    /// @desc Checks if a specific transition exists, or if ANY transition exists (if key is undefined).
+    is_active = function(_key = undefined) {
+        if (_key != undefined) {
+            return variable_struct_exists(active_transitions, _key);
         }
-        return undefined;
+
+        var _names = variable_struct_get_names(active_transitions);
+        return (array_length(_names) > 0);
+    }
+    
+    /// @function is_paused([key])
+    /// @desc Specific: Returns status of that key. Global: Returns true only if ALL tracks are paused.
+    is_paused = function(_key = undefined) {
+        if (_key != undefined) {
+            if (variable_struct_exists(active_transitions, _key)) {
+                return active_transitions[$ _key].is_paused;
+            }
+            return undefined;
+        }
+        
+        var _keys = variable_struct_get_names(active_transitions);
+        if (array_length(_keys) == 0) return false; 
+        
+        var i = 0; repeat(array_length(_keys)) {
+            var _m = active_transitions[$ _keys[i]];
+            if (!_m.is_paused) return false; 
+            i++;
+        }
+        return true;
     }
 
-	/// @function custom(curve_asset_or_struct, [channel_index])
-    /// @description Prepares a GameMaker Animation Curve asset for use in a transition.
-    /// @param {Asset.GMAnimCurve|Struct} curve_asset_or_struct The Animation Curve asset (e.g. ac_MyCurve) or a pre-fetched struct from animcurve_get().
-    /// @param {real} [channel_index] The channel index within the curve to use.
-    /// @returns {Struct|undefined} A special struct for the update method to recognize, or undefined on failure.
+    /// @function custom(curve_asset_or_struct, [channel_index])
     custom = function(_curve_asset_or_struct, _channel_index = 0) {
         var _curve_struct = _curve_asset_or_struct;
-        
-        // If not a struct, assume it's an asset ID and try to get the struct
-        if (!is_struct(_curve_struct)) {
-            _curve_struct = animcurve_get(_curve_asset_or_struct);
-        }
-        
-        // Validate the curve and channel
+        if (!is_struct(_curve_struct)) _curve_struct = animcurve_get(_curve_asset_or_struct);
         if (!is_struct(_curve_struct) || !variable_struct_exists(_curve_struct, "channels")) return undefined;
         if (_channel_index >= array_length(_curve_struct.channels)) return undefined;
         
-        var _channel = _curve_struct.channels[_channel_index];
-        
         return {
             __is_anim_curve: true,
-            channel: _channel
+            channel: _curve_struct.channels[_channel_index]
         };
     }
 
     // --- Private Helpers ---
 
-    /// @desc (Internal) Sets a manager's state to a specific track index and timer.
-    /// @param {Struct} _manager The animation manager.
-    /// @param {Real} _index The index in the queue to set.
-    /// @param {Real} [_timer] The new timer value (e.g., overflow or underflow).
-    /// @param {Real} [_start_dir] 1 = start at beginning, -1 = start at end.
+    /// @desc (Internal) Interpolates Reals or Structs.
+    _calculate_current_value = function(_from, _to, _progress, _lerp_func) {
+        if (is_struct(_from)) {
+            var _result = {};
+            var _keys = variable_struct_get_names(_to);
+            var i = 0; repeat(array_length(_keys)) {
+                var _k = _keys[i];
+                _result[$ _k] = _lerp_func(_from[$ _k], _to[$ _k], _progress);
+                i++;
+            }
+            return _result;
+        } else {
+            return _lerp_func(_from, _to, _progress);
+        }
+    }
+
+    /// @desc (Internal) Sets a manager's state to a specific track index.
     _init_track = function(_manager, _index, _timer = 0, _start_dir = 1) {
         _manager.current_index = _index;
         var _def = _manager.queue[_index];
@@ -479,139 +512,87 @@ function Cassette() constructor{
             _manager.direction = 1; 
             _manager.timer = _timer;
         }
+        
+        if (!_def.is_wait) {
+            var _progress = (_def.duration <= 0) ? 1 : clamp(_manager.timer / _def.duration, 0, 1);
+            var _eased = 0;
+            
+            if (_def.is_curve) _eased = animcurve_channel_evaluate(_def.CASSETTE_func.channel, _progress);
+            else _eased = _def.CASSETTE_func(_progress);
 
-        _evaluate_and_set_value(_manager);
+            _manager.current_val = _calculate_current_value(_def.from_val, _def.to_val, _eased, _manager.lerp_func);
+        }
     }
 
-    /// @desc (Internal) Advances a manager to its next track or marks it for completion.
+    /// @desc (Internal) Advances a manager to next track.
     _move_to_next_track = function(_manager, _key_for_completion, _completed_keys_ref, _overflow = 0) {
-        
-        // track_end
         var _current_def = _manager.queue[_manager.current_index];
-        if (is_method(_current_def.on_track_end)) {
-            _current_def.on_track_end();
-        }
+        if (is_method(_current_def.on_track_end)) _current_def.on_track_end();
 
-        // Move to next track or end sequence
         if (_manager.current_index + 1 < array_length(_manager.queue)) {
             _init_track(_manager, _manager.current_index + 1, _overflow, 1);
-        } 
-        else {
-            // sequence_end 
-            if (is_method(_manager.on_sequence_end)) {
-                _manager.on_sequence_end();
-            }
-            
+        } else {
+            if (is_method(_manager.on_sequence_end)) _manager.on_sequence_end();
             array_push(_completed_keys_ref, _key_for_completion);
         }
     };
 
-    /// @desc (Internal) Moves a manager to the end of its previous track.
+    /// @desc (Internal) Moves a manager backward.
     _handle_backward_completion = function(_manager, _key_for_completion, _underflow) {
         if (_manager.current_index > 0) {
-            var _prev_index = _manager.current_index - 1;
-            _init_track(_manager, _prev_index, _underflow, -1);
-        } 
-        else {
+            _init_track(_manager, _manager.current_index - 1, _underflow, -1);
+        } else {
             _manager.timer = 0;
             _manager.direction = 1;
         }
     };
-    /// @desc (Internal) Applies a callback to one, many, or all active transitions.
+
+    /// @desc (Internal) Apply function to managers.
     _apply_to_managers = function(_target_keys, _action_func, _data = undefined) {
         if (_target_keys == undefined) {
-            // --- Affect All ---
             var _keys = variable_struct_get_names(active_transitions);
-            for (var i = 0; i < array_length(_keys); i++) {
-                var _key = _keys[i];
-                if (variable_struct_exists(active_transitions, _key)) {
-                    _action_func(active_transitions[$ _key], _data, _key); 
-                }
+            var i = 0; repeat(array_length(_keys)) {
+                var _k = _keys[i];
+                if (variable_struct_exists(active_transitions, _k)) _action_func(active_transitions[$ _k], _data, _k); 
+                i++;
             }
         } else if (is_array(_target_keys)) {
-            // --- Affect Array ---
-            for (var i = 0; i < array_length(_target_keys); i++) {
-                var _key = _target_keys[i];
-                if (variable_struct_exists(active_transitions, _key)) {
-                    _action_func(active_transitions[$ _key], _data, _key); 
-                }
+            var i = 0; repeat(array_length(_target_keys)) {
+                var _k = _target_keys[i];
+                if (variable_struct_exists(active_transitions, _k)) _action_func(active_transitions[$ _k], _data, _k);
+                i++;
             }
         } else if (is_string(_target_keys)) {
-            // --- Affect Single ---
-            if (variable_struct_exists(active_transitions, _target_keys)) {
-                _action_func(active_transitions[$ _target_keys], _data, _target_keys); 
-            }
+            if (variable_struct_exists(active_transitions, _target_keys)) _action_func(active_transitions[$ _target_keys], _data, _target_keys); 
         }
-    }
-    
-    /// @desc (Internal) Re-evaluates and sets a manager's current_val based on its timer.
-    _evaluate_and_set_value = function(_manager) {
-        // If the current spot is a wait, value is unchanged
-        var _current_def = _manager.queue[_manager.current_index];
-        if (variable_struct_exists(_current_def, "is_wait")) {
-            return; 
-        }
-
-        // It's a regular animation track. Evaluate it.
-        var _raw_progress = 0;
-        if (_current_def.duration <= 0) {
-            _raw_progress = 1;
-        } else {
-            _raw_progress = clamp(_manager.timer / _current_def.duration, 0, 1);
-        }
-        var _eased_progress = 0;
-        var _lerper = _manager.lerp_func;
-        var _CASSETTE_source = _current_def.CASSETTE_func;
-        
-        if (is_struct(_CASSETTE_source) && variable_struct_exists(_CASSETTE_source, "__is_anim_curve")) {
-            _eased_progress = animcurve_channel_evaluate(_CASSETTE_source.channel, _raw_progress);
-        } else {
-            _eased_progress = _CASSETTE_source(_raw_progress);
-        }
-        
-        // Seeking/initing doesn't support PingPong direction; it always resets to forward.
-        _manager.current_val = _lerper(_current_def.from_val, _current_def.to_val, _eased_progress);
     }
 
     /// @desc (Internal) The core logic for seeking.
     _seek_manager = function(_manager, _seek_amount, _key) { 
-    
         _manager.timer += _seek_amount;
         
         var _chain_is_finished = false;
         var _current_def = _manager.queue[_manager.current_index];
         
-        // --- 2. Handle Forward Overflow (timer > duration) ---
+        // --- Forward Overflow ---
         while (_manager.timer > _current_def.duration) {
-            
             var _overflow_time = _manager.timer - _current_def.duration;
             var _is_looping = _current_def.anim_state == CASSETTE_ANIM.Loop;
             var _is_pingpong = _current_def.anim_state == CASSETTE_ANIM.PingPong;
             var _duration = _current_def.duration;
 
-            // --- Check for loop/pong on CURRENT track first ---
             if ((_is_looping || _is_pingpong) && _manager.loops_left != 0) {
-
-                if (_duration <= 0) { 
-                    _manager.timer = 0;
-                    _manager.direction = 1;
-                    break;
-                }
-
+                if (_duration <= 0) { _manager.timer = 0; _manager.direction = 1; break; }
                 if (_is_looping) {
                     _manager.timer = _manager.timer % _duration;
                     _manager.direction = 1;
-                }
-                else { // _is_pingpong
+                } else { 
                     var _total_loop_duration = _duration * 2;
                     var _wrapped_time = _manager.timer % _total_loop_duration;
-                    
                     if (_wrapped_time > _duration) {
-                        // "pong"
                         _manager.timer = _duration - (_wrapped_time - _duration);
                         _manager.direction = -1;
                     } else {
-                        // "ping"
                         _manager.timer = _wrapped_time;
                         _manager.direction = 1;
                     }
@@ -619,13 +600,10 @@ function Cassette() constructor{
                 break; 
             }
             
-            // --- No loop. Try to move to NEXT track ---
             if (_manager.current_index + 1 < array_length(_manager.queue)) {
                 _init_track(_manager, _manager.current_index + 1, _overflow_time, 1);
                 _current_def = _manager.queue[_manager.current_index];
-            } 
-            // --- No next track. This is the end. ---
-            else {
+            } else {
                 _manager.timer = _current_def.duration; 
                 _manager.direction = 1; 
                 _chain_is_finished = true; 
@@ -633,37 +611,25 @@ function Cassette() constructor{
             }
         }
 
-        // --- 3. Handle Backward Underflow (timer < 0) ---
+        // --- Backward Underflow ---
         while (_manager.timer < 0) {
-            
             var _underflow_time = _manager.timer;
             var _is_looping = _current_def.anim_state == CASSETTE_ANIM.Loop;
             var _is_pingpong = _current_def.anim_state == CASSETTE_ANIM.PingPong;
             var _duration = _current_def.duration;
 
-            // --- Check for loop/pong on CURRENT track first ---
             if ((_is_looping || _is_pingpong) && _manager.loops_left != 0) {
-                
-                if (_duration <= 0) { 
-                    _manager.timer = 0;
-                    _manager.direction = 1;
-                    break;
-                }
-
+                if (_duration <= 0) { _manager.timer = 0; _manager.direction = 1; break; }
                 if (_is_looping) {
                     _manager.timer = _manager.timer % _duration;
                     _manager.direction = 1;
-                } 
-                else { // _is_pingpong
+                } else { 
                     var _total_loop_duration = _duration * 2;
                     var _wrapped_time = _manager.timer % _total_loop_duration;
-                    
                     if (_wrapped_time > _duration) {
-                        // "pong"
                         _manager.timer = _duration - (_wrapped_time - _duration);
                         _manager.direction = -1;
                     } else {
-                        // "ping"
                         _manager.timer = _wrapped_time;
                         _manager.direction = 1;
                     }
@@ -671,30 +637,25 @@ function Cassette() constructor{
                 break; 
             }
             
-            // --- No loop. Try to move to PREVIOUS track ---
             if (_manager.current_index > 0) {
                 _init_track(_manager, _manager.current_index - 1, _underflow_time, -1);
                 _current_def = _manager.queue[_manager.current_index];
-            } 
-            // --- No previous track. This is the beginning. ---
-            else {
+            } else {
                 _manager.timer = 0; 
                 _manager.direction = 1; 
                 break;
             }
         }
         
-        // --- 4. Finalize State ---
         if (_chain_is_finished) {
              _evaluate_and_set_value(_manager); 
              _manager.is_paused = true; 
              return; 
         }
-        
         _evaluate_and_set_value(_manager);
     }
 
-    // --- Easing Functions --
+    // --- Easing Library --
 
     // --- Sine ---
     /// @function InSine(progress)
@@ -944,7 +905,7 @@ function Cassette() constructor{
     static InBounce = function(progress) {
         // Re-use OutBounce by inverting the progress
         // Need to call the OutBounce function associated *with this instance*
-        return 1 - self.OutBounce(1 - progress);
+        return 1 - Cassette.OutBounce(1 - progress);
     };
 
     /// @function InOutBounce(progress)
@@ -954,21 +915,14 @@ function Cassette() constructor{
         // Re-use OutBounce by inverting/scaling the progress
         // Need to call the OutBounce function associated *with this instance*
         return (progress < 0.5)
-            ? (1 - self.OutBounce(1 - 2 * progress)) / 2
-            : (1 + self.OutBounce(2 * progress - 1)) / 2;
+            ? (1 - Cassette.OutBounce(1 - 2 * progress)) / 2
+            : (1 + Cassette.OutBounce(2 * progress - 1)) / 2;
     };
 }
 
 /// --- Experimental ---
-/// @function derp(current, target, decay_rate)
-/// @description A version of lerp that uses delta_time and pre-calculated decay rate.
-/// @param {Real} current      The current value.
-/// @param {Real} target       The target value.
-/// @param {Real} decay_rate   The rate of decay (1 / half_life_seconds).
 function derp(current, target, decay_rate) {
     var _delta_seconds = delta_time / 1000000;
-
     var _amount = 1 - power(0.5, _delta_seconds * decay_rate);
-
     return lerp(current, target, _amount);
 }
