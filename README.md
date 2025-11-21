@@ -75,7 +75,7 @@ ease.transition("patrol")
     .duration(60)  
     .ease(ease.InExpo)  
     .wait(30)  
-    .on_sequence_end(function() {   
+    .onSequenceEnd(function() {   
         ease.rewind("patrol");   
         ease.play("patrol");   
     });  
@@ -107,11 +107,11 @@ Cassette offers granular control over events.
 
 | Callback | Description |
 | :---- | :---- |
-| .on_update(func) | Runs every frame while the track is active. Useful for side effects. |
-| .on_end(func) | Runs when a specific *track* (segment) finishes. |
-| .on_sequence_end(func) | Runs when the *entire* transition chain finishes. |
+| .onUpdate(func) | Runs every frame while the track is active. Useful for side effects. |
+| .onEnd(func) | Runs when a specific *track* (segment) finishes. |
+| .onSequence_end(func) | Runs when the *entire* transition chain finishes. |
 
-*Note: Standard playback callbacks are also available: ```.on_play()```, ```.on_pause()```, ```.on_rewind()```, etc.*
+*Note: Standard playback callbacks are also available: ```.onPlay()```, ```.onPause()```, ```.onRewind()```, etc.*
 
 ### **Playback Controls**
 
@@ -124,7 +124,7 @@ Controls can be applied globally (affecting all animations) or targeted to a spe
 | .play([keys]) | Resumes a paused animation. |
 | .pause([keys]) | Pauses an animation. |
 | .stop(key) | Immediately stops and removes a specific animation. |
-| .set_speed(val, [keys]) | Sets playback speed (e.g., 1.0 is normal, -1.0 is reverse). |
+| .setSpeed(val, [keys]) | Sets playback speed (e.g., 1.0 is normal, -1.0 is reverse). |
 
 #### **Navigation**
 
@@ -139,9 +139,9 @@ Controls can be applied globally (affecting all animations) or targeted to a spe
 #### **Status Checks**
 
 ```gml  
-.is_active(key) // Returns true if an animation with this key exists  
-.is_paused(key) // Returns true if currently paused  
-.get_speed(key) // Returns current playback speed  
+.isActive(key) // Returns true if an animation with this key exists  
+.isPaused(key) // Returns true if currently paused  
+.getSpeed(key) // Returns current playback speed  
 ```
 
 ### **Custom Curves**
@@ -152,9 +152,11 @@ Cassette integrates with GameMaker's built-in Animation Curves.
 2. Pass it to ease.custom() to prepare it.  
 3. Use the result as the easing function.
 
+```gml
 var my_custom_ease = ease.custom(ac_MyCurve);
 
 ease.transition("my_value", 0, 100, 120, my_custom_ease);
+```
 
 ## **License**
 
