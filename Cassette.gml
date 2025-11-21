@@ -914,6 +914,11 @@ function Cassette(_use_delta_time = false, _auto_start = false, _default_lerp = 
 }
 
 /// --- Experimental ---
+/// @function derp(current, target, decay_rate)
+/// @description A version of lerp that uses delta_time and pre-calculated decay rate.
+/// @param {Real} current The current value.
+/// @param {Real} target The target value.
+/// @param {Real} decay_rate The rate of decay (1 / half_life_seconds).
 function derp(current, target, decay_rate) {
     var _delta_seconds = delta_time / 1000000;
     var _amount = 1 - power(0.5, _delta_seconds * decay_rate);
