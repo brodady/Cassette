@@ -1016,30 +1016,3 @@ function Cassette(_useDeltaTime = false, _autoStart = false, _defaultLerp = lerp
             : (1 + Cassette.OutBounce(2 * _progress - 1)) / 2;
     };
 }
-
-/// --- Global Utilities ---
-
-/// @func Derp(current, target, decay_rate)
-/// @description A version of lerp that uses delta_time and pre-calculated decay rate.
-/// @param {Real} current The current value.
-/// @param {Real} target The target value.
-/// @param {Real} decay_rate The rate of decay (1 / half_life_seconds).
-/// @return {Real} The interpolated value.
-function Derp(_current, _target, _decayRate) {
-    var _deltaSeconds = delta_time / 1000000;
-    var _amount = 1 - power(0.5, _deltaSeconds * _decayRate);
-    return lerp(_current, _target, _amount);
-}
-
-/// @func DerpAngle(current, target, decay_rate)
-/// @description A version of Derp specifically for angles (degrees). Handles wrap-around.
-/// @param {Real} current The current angle.
-/// @param {Real} target The target angle.
-/// @param {Real} decay_rate The rate of decay (1 / half_life_seconds).
-/// @return {Real} The interpolated angle.
-function DerpAngle(_current, _target, _decayRate) {
-    var _deltaSeconds = delta_time / 1000000;
-    var _amount = 1 - power(0.5, _deltaSeconds * _decayRate);
-    // angle_difference(dest, src) returns the shortest arc (-180 to 180)
-    return _current + angle_difference(_target, _current) * _amount;
-}
