@@ -69,13 +69,13 @@ ease.transition("patrol")
     .to(x + 200)  
     .duration(60)  
     .ease(ease.OutExpo)  
-    .wait(30)           // Wait 30 frames  
-    .next()             // Start next track  
-    .to(x)              // Move back to original x (omitting .from)  
+    .wait(30)          
+    .next()             
+    .to(x)              
     .duration(60)  
     .ease(ease.InExpo)  
     .wait(30)  
-    .on_sequence_end(function() {   
+    .onSequenceEnd(function() {   
         ease.rewind("patrol");   
         ease.play("patrol");   
     });  
