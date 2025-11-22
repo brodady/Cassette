@@ -1,7 +1,6 @@
 /// --- Cassette ---
 /// @desc A lightweight, self-contained GML script for creating smooth animations.
-/// @ver  2.2.0 (Implemented new playback methods 'react' and 'stagger', added a scheduler, and a new utility 'getActive' which returns an array of active keys)
-/// @lic  MIT
+/// @ver  2.3.0 (Added 'hold' as an animation state)
 
 // --- Playback Constants ---
 #macro CASSETTE_DEFAULT_PLAYBACK_SPEED 1.0
@@ -37,7 +36,8 @@
 enum CASSETTE_ANIM {
     ONCE,
     LOOP, 
-    PING_PONG
+    PING_PONG,
+    HOLD 
 }
     
 /// @function __CassetteTape(managerRef)
@@ -97,6 +97,20 @@ function __CassetteTape(_managerRef) constructor {
             __onUpdate: undefined 
         };
         array_push(__queue, _def);
+        return self;
+    };
+
+    /// @function hold()
+    /// @desc Clamps the animation at the start/end. It will not finish or loop.
+    ///       Essential for react() or physics-like inputs.
+    /// @return {Struct.__CassetteTape}
+    static hold = function() {
+        var _last = array_last(__queue);
+        _last.__animState = CASSETTE_ANIM.HOLD;
+        
+        // We set loopsRemaining to -1 (infinite) so the system knows it persists
+        if (array_length(__queue) == 1) __manager.__loopsRemaining = -1; 
+        
         return self;
     };
 
@@ -285,7 +299,7 @@ function Cassette(_useDeltaTime = false, _autoStart = false, _defaultLerp = lerp
     // Private internal state
     __activeTransitions = {};
     __activeKeyList = [];
-    __scheduler = []; // NEW: Scheduler for Stagger/Delayed calls
+    __scheduler = []; 
     __useDeltaTime = _useDeltaTime;
     __defaultAutoStart = _autoStart;
     __defaultLerp = _defaultLerp;
@@ -327,7 +341,7 @@ function Cassette(_useDeltaTime = false, _autoStart = false, _defaultLerp = lerp
     
             // State
             __currentVal: 0,
-            __reactVel: 0, // NEW: Stores the smoothed velocity for react()
+            __reactVel: 0,
             __timer: 0,
             __direction: 1,
             __loopsRemaining: 1,
@@ -347,7 +361,7 @@ function Cassette(_useDeltaTime = false, _autoStart = false, _defaultLerp = lerp
     /// @function update()
     /// @description Updates all active transitions. Call in Step Event.
     update = function() {
-        // --- NEW: Handle Scheduler (Stagger) ---
+        // -- Scheduler
         var _i = 0;
         var _dtMultiplier = (__useDeltaTime) ? (delta_time / 1000000) : 1;
         
@@ -357,11 +371,12 @@ function Cassette(_useDeltaTime = false, _autoStart = false, _defaultLerp = lerp
             _item.timer -= _dtMultiplier;
             
             if (_item.timer <= 0) {
-                _item.func(_item.args); // Execute the scheduled function
+                _item.func(_item.args);
                 array_delete(__scheduler, _i, 1);
             }
         }
 
+        // -- Update
         var _completedKeys = [];
         var _len = array_length(__activeKeyList);
         _i = 0;
@@ -392,7 +407,12 @@ function Cassette(_useDeltaTime = false, _autoStart = false, _defaultLerp = lerp
             // FORWARD BOUNDARY
             if (_manager.__timer >= _currentDef.duration) {
                 var _overflow = _manager.__timer - _currentDef.duration;
-                if (_isLooping) {
+                
+                if (_currentDef.__animState == CASSETTE_ANIM.HOLD) {
+                    // NEW: Clamp to end. Do not finish. Do not wrap.
+                    _manager.__timer = _currentDef.duration;
+                }
+                else if (_isLooping) {
                     if (_manager.__loopsRemaining > 0) _manager.__loopsRemaining--;
                     if (_manager.__loopsRemaining != 0) {
                         _manager.__timer = _overflow;
@@ -415,7 +435,12 @@ function Cassette(_useDeltaTime = false, _autoStart = false, _defaultLerp = lerp
             // BACKWARD BOUNDARY
             else if (_manager.__timer < 0) {
                 var _underflow = _manager.__timer;
-                if (_isLooping) {
+                
+                if (_currentDef.__animState == CASSETTE_ANIM.HOLD) {
+                     // NEW: Clamp to start.
+                    _manager.__timer = 0;
+                }
+                else if (_isLooping) {
                     if (_manager.__loopsRemaining != 0) {
                         _manager.__timer = _currentDef.duration + _underflow;
                     } else {
@@ -445,7 +470,6 @@ function Cassette(_useDeltaTime = false, _autoStart = false, _defaultLerp = lerp
             var _k = _completedKeys[_c];
             variable_struct_remove(__activeTransitions, _k);
             
-            // NEW: Remove from active list
             var _idx = array_get_index(__activeKeyList, _k);
             if (_idx != -1) array_delete(__activeKeyList, _idx, 1);
             

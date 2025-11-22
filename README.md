@@ -75,7 +75,7 @@ ease.transition("patrol")
     .duration(60)  
     .ease(ease.InExpo)  
     .wait(30)  
-    .onSequenceEnd(function() {   
+    .on_sequence_end(function() {   
         ease.rewind("patrol");   
         ease.play("patrol");   
     });  
@@ -87,7 +87,7 @@ You can animate structs directly. Useful for colors, vectors, or other data stru
 
 *Note: This is not recursive. Nested structs are not supported.*
 
-```gml 
+```gml
 // Create Event  
 my_style = { x: 10, y: 10, alpha: 1 };
 
@@ -97,7 +97,58 @@ ease.transition("style_anim")
     .duration(60);  
 ```
 
-## 
+#### **Reactive & Staggered Animation**
+
+Cassette includes advanced playback controls for UI polish and gameplay feel.
+
+**Stagger** Play a group of animations with a delay between each one. Perfect for lists, menus, or cards appearing.
+
+```gml  
+// Define multiple animations  
+var _keys = ["btn_1", "btn_2", "btn_3"];
+
+for(var i = 0; i < 3; i++) {  
+    ease.transition(_keys[i]).from(0).to(1).duration(30);  
+}
+
+// Trigger them with a 5 frame delay between each  
+ease.stagger(_keys, 5); 
+
+// OR Play in reverse order  
+// ease.stagger(_keys, 5, true);  
+```
+
+**React** Drive the playback speed of an animation using an input value (like a joystick or mouse delta). Includes "physics" for weight.
+
+* **Attack:** How fast the animation accelerates when input is given.  
+* **Decay:** How fast it slows down when input stops.
+
+```gml
+// Create Event   
+
+// A simple tilting image: 
+// We define the full range: -15 (Left) to 15 (Right)
+// We set it to .hold() so it hits the limit and stays there.
+ease.transition("lean")
+    .from(-15)
+    .to(15)
+    .duration(60)
+    .hold();
+
+// Since the range is -15 to 15, we want to start in the middle (0 degrees)
+// The duration is 60, so middle is 30.
+ease.seek(30, "lean");
+
+// Step Event
+var _input = keyboard_check(vk_right) - keyboard_check(vk_left);
+
+// If input is 1 (Right): Speed is positive -> Timer goes up -> Angle goes to 15 -> Holds.
+// If input is -1 (Left): Speed is negative -> Timer goes down -> Angle goes to -15 -> Holds.
+// If input is 0: Speed decays to 0 -> Angle stays wherever it currently is.
+ease.react("lean", _input, 0.1, 0.05, ease.OutQuad);
+
+image_angle = ease.getValue("lean", 0);
+```
 
 ## **API Reference**
 
@@ -107,11 +158,11 @@ Cassette offers granular control over events.
 
 | Callback | Description |
 | :---- | :---- |
-| .onUpdate(func) | Runs every frame while the track is active. Useful for side effects. |
-| .onEnd(func) | Runs when a specific *track* (segment) finishes. |
-| .onSequence_end(func) | Runs when the *entire* transition chain finishes. |
+| .on_update(func) | Runs every frame while the track is active. Useful for side effects. |
+| .on_end(func) | Runs when a specific *track* (segment) finishes. |
+| .on_sequence_end(func) | Runs when the *entire* transition chain finishes. |
 
-*Note: Standard playback callbacks are also available: ```.onPlay()```, ```.onPause()```, ```.onRewind()```, etc.*
+*Note: Standard playback callbacks are also available: ```.on_play()```, ```.on_pause()```, ```.on_rewind()```, etc.*
 
 ### **Playback Controls**
 
@@ -122,9 +173,11 @@ Controls can be applied globally (affecting all animations) or targeted to a spe
 | Method | Description |
 | :---- | :---- |
 | .play([keys]) | Resumes a paused animation. |
+| .stagger(keys, delay, [reverse]) | Plays multiple animations with a set delay between starts. |
+| .react(keys, val, att, dec, [ease]) | Drives playback speed via input value with smoothing/momentum. |
 | .pause([keys]) | Pauses an animation. |
 | .stop(key) | Immediately stops and removes a specific animation. |
-| .setSpeed(val, [keys]) | Sets playback speed (e.g., 1.0 is normal, -1.0 is reverse). |
+| .set_speed(val, [keys]) | Sets playback speed (e.g., 1.0 is normal, -1.0 is reverse). |
 
 #### **Navigation**
 
@@ -140,6 +193,7 @@ Controls can be applied globally (affecting all animations) or targeted to a spe
 
 ```gml  
 .isActive(key) // Returns true if an animation with this key exists  
+.getActive() // Returns an array of active keys  
 .isPaused(key) // Returns true if currently paused  
 .getSpeed(key) // Returns current playback speed  
 ```
@@ -152,10 +206,9 @@ Cassette integrates with GameMaker's built-in Animation Curves.
 2. Pass it to ease.custom() to prepare it.  
 3. Use the result as the easing function.
 
-```gml
-var my_custom_ease = ease.custom(ac_MyCurve);
-
-ease.transition("my_value", 0, 100, 120, my_custom_ease);
+```gml  
+var my_custom_ease = ease.custom(ac_MyCurve);  
+ease.transition("my_value", 0, 100, 120, my_custom_ease);  
 ```
 
 ## **License**
