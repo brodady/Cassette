@@ -158,9 +158,9 @@ Cassette offers granular control over events.
 
 | Callback | Description |
 | :---- | :---- |
-| .on_update(func) | Runs every frame while the track is active. Useful for side effects. |
-| .on_end(func) | Runs when a specific *track* (segment) finishes. |
-| .on_sequence_end(func) | Runs when the *entire* transition chain finishes. |
+| .onUpdate(func) | Runs every frame while the track is active. Useful for side effects. |
+| .onEnd(func) | Runs when a specific *track* (segment) finishes. |
+| .onSequenceEnd(func) | Runs when the *entire* transition chain finishes. |
 
 *Note: Standard playback callbacks are also available: ```.on_play()```, ```.on_pause()```, ```.on_rewind()```, etc.*
 
@@ -177,7 +177,7 @@ Controls can be applied globally (affecting all animations) or targeted to a spe
 | .react(keys, val, att, dec, [ease]) | Drives playback speed via input value with smoothing/momentum. |
 | .pause([keys]) | Pauses an animation. |
 | .stop(key) | Immediately stops and removes a specific animation. |
-| .set_speed(val, [keys]) | Sets playback speed (e.g., 1.0 is normal, -1.0 is reverse). |
+| .setSpeed(val, [keys]) | Sets playback speed (e.g., 1.0 is normal, -1.0 is reverse). |
 
 #### **Navigation**
 
