@@ -1,6 +1,6 @@
 /// --- Cassette ---
 /// @desc A lightweight, self-contained GML script for creating smooth animations.
-/// @ver  2.1.0 (Moved builder to Global Scope for Feather/IntelliSense support; Converted builder methods to 'static' to reduce memory usage, Added Caching to reduce GC.)
+/// @ver  2.2.0 (Implemented new playback methods 'react' and 'stagger', added a scheduler, and a new utility 'getActive' which returns an array of active keys)
 /// @lic  MIT
 
 // --- Playback Constants ---
@@ -39,11 +39,9 @@ enum CASSETTE_ANIM {
     LOOP, 
     PING_PONG
 }
-
-// --- Private Chain Builder ---
     
 /// @function __CassetteTape(managerRef)
-/// @desc Internal builder for constructing animation chains.
+/// @desc Internal builder for constructing animation chains (returned by .transition).
 function __CassetteTape(_managerRef) constructor {
     __manager = _managerRef;
     __queue = _managerRef.__queue;
@@ -190,7 +188,7 @@ function __CassetteTape(_managerRef) constructor {
     /// @desc Triggered when .pause() is called.
     /// @param {Function} callback
     /// @return {Struct.__CassetteTape}
-    onPause = function(_func) {
+    static onPause = function(_func) {
         __manager.__onPauseCb = _func;
         return self;
     };
@@ -286,7 +284,8 @@ function Cassette(_useDeltaTime = false, _autoStart = false, _defaultLerp = lerp
     
     // Private internal state
     __activeTransitions = {};
-    __activeKeyList = []; 
+    __activeKeyList = [];
+    __scheduler = []; // NEW: Scheduler for Stagger/Delayed calls
     __useDeltaTime = _useDeltaTime;
     __defaultAutoStart = _autoStart;
     __defaultLerp = _defaultLerp;
@@ -328,6 +327,7 @@ function Cassette(_useDeltaTime = false, _autoStart = false, _defaultLerp = lerp
     
             // State
             __currentVal: 0,
+            __reactVel: 0, // NEW: Stores the smoothed velocity for react()
             __timer: 0,
             __direction: 1,
             __loopsRemaining: 1,
@@ -335,8 +335,7 @@ function Cassette(_useDeltaTime = false, _autoStart = false, _defaultLerp = lerp
             __playbackSpeed: CASSETTE_DEFAULT_PLAYBACK_SPEED,
             __isFinished: false 
         };
-        
-        // NEW: Add to list if not already active
+
         if (!variable_struct_exists(__activeTransitions, _key)) {
             array_push(__activeKeyList, _key);
         }
@@ -348,11 +347,24 @@ function Cassette(_useDeltaTime = false, _autoStart = false, _defaultLerp = lerp
     /// @function update()
     /// @description Updates all active transitions. Call in Step Event.
     update = function() {
-        var _completedKeys = [];
-        
-        // FIXED: Iterate over cached array instead of generating new array every frame
-        var _len = array_length(__activeKeyList);
+        // --- NEW: Handle Scheduler (Stagger) ---
         var _i = 0;
+        var _dtMultiplier = (__useDeltaTime) ? (delta_time / 1000000) : 1;
+        
+        // Iterate backwards to allow deletion
+        for(var _i = array_length(__scheduler) - 1; _i >= 0; _i--) {
+            var _item = __scheduler[_i];
+            _item.timer -= _dtMultiplier;
+            
+            if (_item.timer <= 0) {
+                _item.func(_item.args); // Execute the scheduled function
+                array_delete(__scheduler, _i, 1);
+            }
+        }
+
+        var _completedKeys = [];
+        var _len = array_length(__activeKeyList);
+        _i = 0;
         
         repeat(_len) {
             var _key = __activeKeyList[_i];
@@ -369,10 +381,6 @@ function Cassette(_useDeltaTime = false, _autoStart = false, _defaultLerp = lerp
             var _timeStep = _dtMultiplier * abs(_manager.__playbackSpeed);
             
             _manager.__timer += _timeStep * (sign(_manager.__playbackSpeed) * _manager.__direction);
-
-            // REMOVED: The entire explicit "Handle Wait Nodes" if-block. 
-            // Waits now fall through to __evaluateAndSetValue (which returns early for waits)
-            // and then hit the standard Boundary Logic below.
 
             // Handle Animation Logic
             __evaluateAndSetValue(_manager);
@@ -453,6 +461,76 @@ function Cassette(_useDeltaTime = false, _autoStart = false, _defaultLerp = lerp
             if (is_method(_manager.__onPlayCb)) _manager.__onPlayCb();
             _manager.__isPaused = false; 
         });
+    };
+
+    /// @function stagger(keys, delay, [reverse])
+    /// @desc Plays a list of animations with a time delay between each start.
+    stagger = function(_keys, _delay, _reverse = false) {
+        if (!is_array(_keys)) _keys = [_keys];
+        
+        // Create a copy so we don't modify the original array if reversing
+        var _set = [];
+        array_copy(_set, 0, _keys, 0, array_length(_keys));
+        
+        if (_reverse) _set = array_reverse(_set);
+        
+        var _len = array_length(_set);
+        for (var _i = 0; _i < _len; _i++) {
+            var _k = _set[_i];
+            var _time = _delay * _i;
+            
+            if (_time <= 0.0001) {
+                play(_k); // Play immediately if it's the first one
+            } else {
+                // Push to scheduler
+                array_push(__scheduler, {
+                    timer: _time,
+                    func: play,
+                    args: _k
+                });
+            }
+        }
+    };
+
+    /// @function react(keys, control_val, [attack], [decay], [ease_func])
+    /// @desc Drives playback speed based on a control value (+/-) with smoothing.
+    ///       Call this every frame in the Step Event.
+    react = function(_keys, _controlVal, _attack = 0.1, _decay = 0.1, _easeFunc = undefined) {
+        __applyToManagers(_keys, function(_manager, _data) {
+            var _input = _data.val;
+            var _att = _data.att;
+            var _dec = _data.dec;
+            var _ease = _data.ease;
+            
+            // Compare absolute values to see if we are moving towards or away from 0
+            var _isAccel = abs(_input) > abs(_manager.__reactVel);
+            var _lerpAmt = _isAccel ? _att : _dec;
+            
+            // Smooth the velocity
+            _manager.__reactVel = _manager.__defaultLerp(_manager.__reactVel, _input, _lerpAmt);
+
+            // Apply optional easing to the magnitude
+            var _finalSpeed = _manager.__reactVel;
+            
+            if (_ease != undefined) {
+                var _sign = sign(_finalSpeed);
+                var _mag = abs(_finalSpeed);
+                _mag = clamp(_mag, 0, 1);
+                _finalSpeed = _ease(_mag) * _sign;
+            }
+            
+            // Apply to playback Speed
+            _manager.__playbackSpeed = _finalSpeed;
+
+            // If speed is negligible, we can pause to save CPU, otherwise play
+            if (abs(_finalSpeed) < 0.001 && _input == 0) {
+                _manager.__isPaused = true;
+                _manager.__reactVel = 0; // Snap to 0
+            } else {
+                _manager.__isPaused = false;
+            }
+            
+        }, { val: _controlVal, att: _attack, dec: _decay, ease: _easeFunc });
     };
 
     /// @function pause([keys])
@@ -565,6 +643,13 @@ function Cassette(_useDeltaTime = false, _autoStart = false, _defaultLerp = lerp
         }
         return _defaultVal;
     };
+
+    /// @function getActive
+    /// @desc Returns an array of all active animation keys in this instance. 
+    /// @returns {array}
+    getActive = function () {
+        return __activeKeyList;
+    }
     
     /// @function isActive([key])
     isActive = function(_key = undefined) {
