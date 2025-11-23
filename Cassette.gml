@@ -1,6 +1,6 @@
 /// --- Cassette ---
 /// @desc A lightweight, self-contained GML script for creating smooth animations.
-/// @ver  2.3.0 (Added 'hold' as an animation state)
+/// @ver  2.3.1 (Patched lerp function error on the react method, temporary fix for now)
 
 // --- Playback Constants ---
 #macro CASSETTE_DEFAULT_PLAYBACK_SPEED 1.0
@@ -531,7 +531,7 @@ function Cassette(_useDeltaTime = false, _autoStart = false, _defaultLerp = lerp
             var _lerpAmt = _isAccel ? _att : _dec;
             
             // Smooth the velocity
-            _manager.__reactVel = _manager.__defaultLerp(_manager.__reactVel, _input, _lerpAmt);
+            _manager.__reactVel = lerp(_manager.__reactVel, _input, _lerpAmt);
 
             // Apply optional easing to the magnitude
             var _finalSpeed = _manager.__reactVel;
