@@ -39,6 +39,8 @@ ease = new Cassette(false, false);
 
 To start a new animation, use .transition(). In v2.0, you build your animation using chainable setter methods like ```.from()```, ```.to()```, and ```.duration()```.
 
+Then update in the Step event with ```.Update()```.
+
 #### 
 
 #### **Basic Movement**
