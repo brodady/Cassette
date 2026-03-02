@@ -1,5 +1,5 @@
 <p align="center">
-<img src="CassetteLogoBanner.png" alt="Cassette Logo Banner" width="1024">
+<img src="CassetteLogoBanner.png" alt="Cassette Logo Banner" width="512">
 </p>
 
 # **Cassette**
