@@ -20,7 +20,6 @@ Just pop a Tape in the Deck and hit play!
 - **Jogwheel-Style Control:** `.scrub()` method (formerly `.react()` in v2+) for seeking with velocity-driven input.
 - **Video Tapes:** Drive frame-perfect sprite animations using easing curves.
 - **Tags** Group and control different animations together by assigning tags, e.g. `.addTag("ui")`.
-- **Fully Modular** No longer a single-class god object. More maintainable and lightweight.
 
 ---
 
