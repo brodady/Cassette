@@ -4,10 +4,6 @@
 
 # **Cassette**
 
-A fluent and feature-packed animation system for GameMaker.
-
-## **Intro**
-
 Inspired by popular web tools like GSAP and Anime.js, Cassette wraps complex tweening, playback manipulation, and property binding into a simple, flexible interface.
 
 Every animation acts like a physical cassette tape in a player, allowing you to Play, Pause, Rewind, Skip, even Seek to specific frames/seconds (and more).
